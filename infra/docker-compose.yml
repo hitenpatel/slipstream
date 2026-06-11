@@ -10,7 +10,10 @@
 
 services:
   db:
-    image: mongo:8
+    # NB: pinned to 4.4 because the NAS CPU lacks AVX (Mongo 5+ requires it).
+    # 4.4 still gives us multi-document transactions in a replica set, which is
+    # all the engine needs. If we move to a modern host later, bump to mongo:8.
+    image: mongo:4.4
     container_name: slipstream-db
     restart: unless-stopped
     command: ["--replSet", "rs0", "--bind_ip_all"]
