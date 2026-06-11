@@ -8,7 +8,7 @@
     "start": "next start -p 3000",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "next lint --dir app",
-    "test": "echo 'test: web (component tests land with M4)'"
+    "test": "vitest run"
   },
   "dependencies": {
     "@slipstream/client": "workspace:*",
@@ -24,6 +24,7 @@
     "@types/react": "19.0.2",
     "@types/react-dom": "19.0.2",
     "eslint": "9.17.0",
-    "eslint-config-next": "15.1.4"
+    "eslint-config-next": "15.1.4",
+    "vitest": "2.1.8"
   }
 }

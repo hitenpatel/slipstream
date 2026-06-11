@@ -6,6 +6,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { Project } from "@slipstream/protocol";
 import { uuidv7 } from "@slipstream/protocol";
 import { useEngine, useEngineState } from "./engine-provider";
+import { CommandPalette } from "./palette/command-palette";
+import { SyncAnnouncer } from "./sync-announcer";
 import styles from "./app-shell.module.css";
 
 export function AppShell({ children }: { children: ReactNode }): React.JSX.Element {
@@ -140,8 +142,17 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
       </aside>
 
       <section className={styles.content}>{children}</section>
+
+      <CommandPalette contextProjectId={projectIdFromPathname(pathname)} />
+      <SyncAnnouncer />
     </div>
   );
+}
+
+function projectIdFromPathname(pathname: string): string | undefined {
+  // /app/{projectId}, /app/{projectId}/board, /app/{projectId}/...
+  const m = pathname.match(/^\/app\/([^/]+)/);
+  return m?.[1];
 }
 
 function SyncBadge({
