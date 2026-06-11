@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getMe } from "@/lib/session";
+import { AppShell } from "./app-shell";
 import { EngineProvider } from "./engine-provider";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <EngineProvider me={me}>
-      {children}
+      <AppShell>{children}</AppShell>
     </EngineProvider>
   );
 }
