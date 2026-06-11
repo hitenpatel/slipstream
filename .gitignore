@@ -1,0 +1,29 @@
+node_modules/
+*.tsbuildinfo
+.next/
+dist/
+build/
+out/
+.turbo/
+.DS_Store
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor
+.vscode/
+.idea/
+
+# tests
+coverage/
+.playwright/
+test-results/
+playwright-report/

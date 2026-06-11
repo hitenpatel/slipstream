@@ -1,0 +1,28 @@
+{
+  "name": "@slipstream/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "next lint --dir app",
+    "test": "echo 'test: web (component tests land with M4)'"
+  },
+  "dependencies": {
+    "@slipstream/client": "workspace:*",
+    "@slipstream/protocol": "workspace:*",
+    "@slipstream/ui": "workspace:*",
+    "next": "15.1.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/react": "19.0.2",
+    "@types/react-dom": "19.0.2",
+    "eslint": "9.17.0",
+    "eslint-config-next": "15.1.4"
+  }
+}

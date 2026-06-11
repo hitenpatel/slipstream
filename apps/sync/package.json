@@ -1,0 +1,23 @@
+{
+  "name": "@slipstream/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'lint: sync (no rules wired yet)'",
+    "test": "echo 'test: sync (no tests yet, see M1)'"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.13.7",
+    "@slipstream/protocol": "workspace:*",
+    "hono": "4.6.13"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "tsx": "4.19.2"
+  }
+}

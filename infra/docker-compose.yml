@@ -1,0 +1,91 @@
+# Compose for the slipstream stack.
+#
+# Hooks into the existing Traefik instance on this box:
+#   - shared network: home-server_frontend (external)
+#   - entrypoint:     web-secure
+#   - cert resolver:  myresolver (Cloudflare DNS-01)
+#
+# tracker.hiten-patel.co.uk resolves through the Cloudflare wildcard A record,
+# so no DNS change is needed when bringing this up — Traefik issues the cert on
+# first request via the DNS challenge.
+
+services:
+  db:
+    image: mongo:8
+    container_name: slipstream-db
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - slipstream-db:/data/db
+    networks: [internal]
+    healthcheck:
+      # Self-initiates the single-node replica set on first healthy run.
+      # Transactions on Mongo require a replica set even with one node.
+      test: >
+        bash -c "mongosh --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'db:27017' }] }) }\""
+      interval: 10s
+      start_period: 30s
+      retries: 12
+
+  sync:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.sync
+    container_name: slipstream-sync
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://db:27017/slipstream?replicaSet=rs0
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
+      PORT: "8787"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal, frontend]
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+      - traefik.enable=true
+      - traefik.docker.network=home-server_frontend
+      - "traefik.http.routers.slipstream-sync.rule=Host(`tracker.hiten-patel.co.uk`) && (PathPrefix(`/api/sync`) || PathPrefix(`/api/push`) || PathPrefix(`/api/pull`))"
+      - traefik.http.routers.slipstream-sync.priority=100
+      - traefik.http.routers.slipstream-sync.entryPoints=web-secure
+      - traefik.http.routers.slipstream-sync.tls=true
+      - traefik.http.routers.slipstream-sync.tls.certresolver=myresolver
+      - traefik.http.services.slipstream-sync.loadbalancer.server.port=8787
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    container_name: slipstream-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_SYNC_URL: https://tracker.hiten-patel.co.uk
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
+      MONGODB_URI: mongodb://db:27017/slipstream?replicaSet=rs0
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    depends_on:
+      db:
+        condition: service_healthy
+      sync:
+        condition: service_started
+    networks: [internal, frontend]
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+      - traefik.enable=true
+      - traefik.docker.network=home-server_frontend
+      - traefik.http.routers.slipstream-web.rule=Host(`tracker.hiten-patel.co.uk`)
+      - traefik.http.routers.slipstream-web.entryPoints=web-secure
+      - traefik.http.routers.slipstream-web.tls=true
+      - traefik.http.routers.slipstream-web.tls.certresolver=myresolver
+      - traefik.http.services.slipstream-web.loadbalancer.server.port=3000
+
+networks:
+  internal:
+    driver: bridge
+  frontend:
+    external: true
+    name: home-server_frontend
+
+volumes:
+  slipstream-db:

@@ -1,0 +1,42 @@
+/* Design tokens, exposed as CSS custom properties so any layer can consume them.
+   Full token set lands with the UI primitives in M4/M5. */
+
+@layer tokens {
+  :root {
+    --color-bg: #0b0d10;
+    --color-surface: #14171c;
+    --color-surface-2: #1c2027;
+    --color-text: #e6e8eb;
+    --color-text-muted: #9aa3ad;
+    --color-accent: #6ea8ff;
+    --color-focus-ring: #6ea8ff;
+    --color-border: #2a2f37;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --color-bg: #fafbfc;
+      --color-surface: #ffffff;
+      --color-surface-2: #f3f5f8;
+      --color-text: #14171c;
+      --color-text-muted: #5d6770;
+      --color-border: #d8dde3;
+    }
+  }
+}
