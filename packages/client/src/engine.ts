@@ -11,6 +11,7 @@ import {
   runMutator,
   uuidv7,
 } from "@slipstream/protocol";
+import type { PokeChannel } from "./poke-channel.js";
 import type { ClientStorage } from "./storage.js";
 import type { Transport } from "./transport.js";
 
@@ -36,6 +37,8 @@ export interface EngineState {
 export interface EngineOptions {
   storage: ClientStorage;
   transport: Transport;
+  /** Optional poke channel. Each poke triggers a sync. */
+  pokeChannel?: PokeChannel;
   /** Test seam — defaults to Date.now(). */
   now?: () => number;
   /** Test seam — defaults to uuidv7(). */
@@ -100,7 +103,26 @@ export class Engine {
     }
 
     engine.recomputeView();
+
+    if (opts.pokeChannel) {
+      engine.pokeChannel = opts.pokeChannel;
+      opts.pokeChannel.onPoke(() => {
+        void engine.sync();
+      });
+    }
+
     return engine;
+  }
+
+  private pokeChannel: PokeChannel | undefined;
+
+  /**
+   * Stop the engine. Closes the poke channel and clears the in-memory outbox
+   * mirror. The durable IndexedDB state is left intact for next session.
+   */
+  close(): void {
+    this.pokeChannel?.close();
+    this.pokeChannel = undefined;
   }
 
   /** Recompute the materialised view: serverBase + unconfirmed outbox replays. */

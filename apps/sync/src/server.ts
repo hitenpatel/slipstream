@@ -1,5 +1,7 @@
+import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { WebSocketServer } from "ws";
 import {
   PROTOCOL_VERSION,
   PullRequestSchema,
@@ -8,8 +10,15 @@ import {
 import { connect, type SlipstreamDb } from "./db.js";
 import { applyPush } from "./push.js";
 import { pull } from "./pull.js";
+import { PokeBroker } from "./poke.js";
 
-export function createApp(db: SlipstreamDb): Hono {
+export interface AppDeps {
+  db: SlipstreamDb;
+  broker: PokeBroker;
+}
+
+export function createApp(deps: AppDeps): Hono {
+  const { db, broker } = deps;
   const app = new Hono();
 
   app.get("/api/sync/health", (c) =>
@@ -17,7 +26,8 @@ export function createApp(db: SlipstreamDb): Hono {
       ok: true,
       service: "slipstream-sync",
       protocolVersion: PROTOCOL_VERSION,
-      milestone: "M1",
+      milestone: "M3",
+      connectedClients: broker.size(),
     }),
   );
 
@@ -29,6 +39,9 @@ export function createApp(db: SlipstreamDb): Hono {
     }
     try {
       const res = await applyPush(db, parsed.data);
+      // Notify other tabs/clients there's something new to pull. Cheap to
+      // fan out to everyone for now (see PokeBroker for the M4 workspace scope).
+      broker.pokeAll();
       return c.json(res);
     } catch (err) {
       return c.json({ error: "push_failed", message: (err as Error).message }, 500);
@@ -48,6 +61,49 @@ export function createApp(db: SlipstreamDb): Hono {
   return app;
 }
 
+/**
+ * Attach a WebSocketServer to a Node HTTP server, routing upgrades on
+ * /api/sync to the PokeBroker. Each socket gets a tiny `hello` from the server
+ * with the current cookie, so even a freshly connected client knows whether to
+ * pull. Inbound messages are silently dropped (M3 doesn't accept anything yet).
+ */
+/** Anything that emits `upgrade` events the way Node's http.Server does. */
+type UpgradableServer = {
+  on(event: "upgrade", listener: (req: import("node:http").IncomingMessage, socket: import("node:net").Socket, head: Buffer) => void): unknown;
+};
+
+export function attachSyncSocket(
+  httpServer: UpgradableServer,
+  broker: PokeBroker,
+  db: SlipstreamDb,
+): WebSocketServer {
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", (req, rawSocket, head) => {
+    const url = new URL(req.url ?? "/", "http://internal");
+    if (url.pathname !== "/api/sync") {
+      rawSocket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, rawSocket, head, (ws) => {
+      broker.add(ws);
+      ws.on("close", () => broker.remove(ws));
+      ws.on("error", () => broker.remove(ws));
+      // greet with the current cookie so the client can pull if it's behind
+      db.counters
+        .findOne({ _id: "global" })
+        .then((c) => {
+          ws.send(JSON.stringify({ type: "hello", clientID: "server", cookie: c?.seq ?? 0 }));
+        })
+        .catch(() => {
+          // best-effort; the client will sync anyway on first poke
+        });
+    });
+  });
+
+  return wss;
+}
+
 async function main(): Promise<void> {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
@@ -57,13 +113,15 @@ async function main(): Promise<void> {
   }
   const db = await connect(uri);
   await db.ensureIndexes();
-  const app = createApp(db);
+  const broker = new PokeBroker();
+  const app = createApp({ db, broker });
 
   const port = Number(process.env.PORT ?? 8787);
-  serve({ fetch: app.fetch, port }, (info) => {
+  const httpServer = serve({ fetch: app.fetch, port }, (info) => {
     // eslint-disable-next-line no-console
     console.log(`slipstream-sync listening on :${info.port}`);
   });
+  attachSyncSocket(httpServer, broker, db);
 }
 
 // Only start the server when run as the entrypoint (not when imported by tests).

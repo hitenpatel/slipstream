@@ -11,6 +11,7 @@ let stop: () => Promise<void>;
 beforeAll(async () => {
   ({ db, stop } = await startMemoryDb());
 }, 60_000);
+// poke broker isn't used by these tests; the websocket suite covers it
 
 afterAll(async () => {
   await stop();
