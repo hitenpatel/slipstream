@@ -1,41 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  between,
   IssueStatus,
+  between,
   uuidv7,
   type Issue,
   type IssueStatus as IssueStatusT,
+  type Label,
 } from "@slipstream/protocol";
-import { useEngine, useEngineState } from "../engine-provider";
+import { useEngine } from "../engine-provider";
+import { STATUS_LABEL, applyFilters, useFilters } from "./filters";
+import { useProjectData } from "./hooks";
+import { LabelDots } from "./label-dots";
 import styles from "./project-view.module.css";
 
 const STATUSES: IssueStatusT[] = ["backlog", "todo", "in_progress", "done", "cancelled"];
 
-const STATUS_LABEL: Record<IssueStatusT, string> = {
-  backlog: "Backlog",
-  todo: "Todo",
-  in_progress: "In progress",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-
 export function ProjectView({ projectId }: { projectId: string }): React.JSX.Element {
   const { engine, me } = useEngine();
-  const view = useEngineState((s) => s.view);
+  const { project, issues, labels } = useProjectData(projectId);
+  const filters = useFilters();
+  const router = useRouter();
+  const params = useSearchParams();
 
-  const project = view.get("project", projectId);
-  const issues = useMemo(() => {
-    const out: Issue[] = [];
-    for (const e of view.entities.values()) {
-      if (e.kind === "issue" && e.projectId === projectId && !e.deleted) {
-        out.push(e);
-      }
-    }
-    out.sort((a, b) => a.position.localeCompare(b.position));
-    return out;
-  }, [view, projectId]);
+  const filtered = applyFilters(issues, filters);
 
   const [newTitle, setNewTitle] = useState("");
 
@@ -66,6 +56,12 @@ export function ProjectView({ projectId }: { projectId: string }): React.JSX.Ele
     void engine.sync();
   }
 
+  function openIssue(issueId: string): void {
+    const next = new URLSearchParams(params.toString());
+    next.set("issue", issueId);
+    router.replace(`?${next.toString()}`);
+  }
+
   if (!project) {
     return (
       <main className={styles.main}>
@@ -82,16 +78,6 @@ export function ProjectView({ projectId }: { projectId: string }): React.JSX.Ele
 
   return (
     <main className={styles.main}>
-      <header className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>
-            <span className={styles.projectKey}>{project.key}</span>
-            <span>{issues.length} {issues.length === 1 ? "issue" : "issues"}</span>
-          </p>
-          <h1 className={styles.title}>{project.name}</h1>
-        </div>
-      </header>
-
       <form onSubmit={createIssue} className={styles.newRow}>
         <input
           className={styles.newInput}
@@ -105,16 +91,22 @@ export function ProjectView({ projectId }: { projectId: string }): React.JSX.Ele
         </button>
       </form>
 
-      {issues.length === 0 ? (
-        <p className={styles.empty}>No issues yet. The title field above is the fastest way in.</p>
+      {filtered.length === 0 ? (
+        <p className={styles.empty}>
+          {issues.length === 0
+            ? "No issues yet. The title field above is the fastest way in."
+            : "No issues match the current filters."}
+        </p>
       ) : (
         <ul className={styles.list} aria-label={`${project.name} issues`}>
-          {issues.map((issue) => (
+          {filtered.map((issue) => (
             <IssueRow
               key={issue.id}
               issue={issue}
+              labels={labels}
               onStatus={(s) => setStatus(issue.id, s)}
               onDelete={() => deleteIssue(issue.id)}
+              onOpen={() => openIssue(issue.id)}
             />
           ))}
         </ul>
@@ -125,14 +117,26 @@ export function ProjectView({ projectId }: { projectId: string }): React.JSX.Ele
 
 function IssueRow({
   issue,
+  labels,
   onStatus,
   onDelete,
+  onOpen,
 }: {
   issue: Issue;
+  labels: Label[];
   onStatus: (s: IssueStatusT) => void;
   onDelete: () => void;
+  onOpen: () => void;
 }): React.JSX.Element {
   const optimistic = issue.version === 0;
+
+  function onTitleKey(e: React.KeyboardEvent): void {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen();
+    }
+  }
+
   return (
     <li className={styles.row} data-optimistic={optimistic ? "true" : "false"}>
       <select
@@ -143,6 +147,7 @@ function IssueRow({
           const next = IssueStatus.safeParse(e.target.value);
           if (next.success) onStatus(next.data);
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         {STATUSES.map((s) => (
           <option key={s} value={s}>
@@ -150,7 +155,16 @@ function IssueRow({
           </option>
         ))}
       </select>
-      <span className={styles.title2}>{issue.title}</span>
+      <span
+        role="button"
+        tabIndex={0}
+        className={styles.title2}
+        onClick={onOpen}
+        onKeyDown={onTitleKey}
+      >
+        {issue.title}
+      </span>
+      <LabelDots labelIds={issue.labelIds} labels={labels} />
       {optimistic ? (
         <span className={styles.optimistic} aria-label="Not yet confirmed by the server">
           pending
