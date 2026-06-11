@@ -7,6 +7,268 @@ This is the written design for the web app: the route tree, the state model,
 the boundary between RSC and the client island, the auth flow, how the engine
 reaches the components, the accessibility plan, and the open questions.
 
+The diagrams in §0 are the canonical record — the prose that follows expands
+on each of them. If a diagram and the prose disagree, the diagram wins and the
+prose is the bug.
+
+---
+
+## 0. At a glance
+
+Five diagrams, each answering one specific question. Mermaid renders natively
+on GitHub.
+
+### 0.1 State layers — where state lives and what triggers each layer
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser tab"]
+    direction TB
+
+    subgraph DurableState["Durable state — survives reload"]
+      direction TB
+      IDB_Base["IDB · serverBase<br/>last authoritative snapshot<br/>(per-entity rows)"]
+      IDB_Outbox["IDB · outbox<br/>unconfirmed mutations<br/>(ordered by client id)"]
+      IDB_Meta["IDB · meta<br/>clientID, cookie,<br/>lastMutationID"]
+    end
+
+    subgraph EngineMem["Engine memory — in-process mirror"]
+      direction TB
+      Mem_Base["MemoryView serverBase<br/>(map keyed by kind:id)"]
+      Mem_Outbox["outbox array<br/>(mirror of IDB outbox)"]
+    end
+
+    subgraph MaterialisedView["Materialised view — what UI subscribes to"]
+      direction TB
+      Store["zustand store · EngineState<br/>view = serverBase + outbox replays<br/>+ online, syncing, cookie, clientID"]
+    end
+
+    subgraph EphemeralState["Ephemeral UI state — local component"]
+      direction TB
+      Local["useState in pages<br/>· new-issue input value<br/>· create-project form open<br/>· status select focus<br/>(NEVER mirrors entity data)"]
+    end
+
+    IDB_Base -->|on open: read| Mem_Base
+    IDB_Outbox -->|on open: read| Mem_Outbox
+    Mem_Base -->|clone + replay outbox| Store
+    Mem_Outbox -->|replay| Store
+  end
+
+  subgraph Server["Sync server"]
+    Push["/api/push<br/>(transaction, $inc counter)"]
+    Pull["/api/pull<br/>(patch since cookie)"]
+    WS["WebSocket poke<br/>'something changed'"]
+  end
+
+  Store -->|UI handler calls<br/>engine.mutate| Mem_Outbox
+  Mem_Outbox -->|appendOutbox| IDB_Outbox
+  Mem_Outbox -->|engine.sync push| Push
+  Push -->|lastMutationID| Mem_Outbox
+  WS -->|onPoke<br/>engine.sync| Pull
+  Pull -->|applyPatch| Mem_Base
+  Mem_Base -->|putServerEntity| IDB_Base
+
+  classDef durable fill:#1a3a52,stroke:#6ea8ff,color:#e6e8eb
+  classDef memory  fill:#2a2f37,stroke:#9aa3ad,color:#e6e8eb
+  classDef view    fill:#2d4a2d,stroke:#3fbf6c,color:#e6e8eb
+  classDef ephemeral fill:#3a2a3a,stroke:#bf6eaa,color:#e6e8eb
+  classDef server  fill:#14171c,stroke:#2a2f37,color:#e6e8eb
+
+  class IDB_Base,IDB_Outbox,IDB_Meta durable
+  class Mem_Base,Mem_Outbox memory
+  class Store view
+  class Local ephemeral
+  class Push,Pull,WS server
+```
+
+**Invariants the diagram makes visible**:
+
+1. There are exactly **four layers of state**: durable IDB, engine in-memory
+   mirror, materialised view (computed), and ephemeral UI scratch.
+2. Entity data **never** lives in `useState`. That layer is for input strings
+   and "is this modal open" only.
+3. There are exactly **two writers**: `engine.mutate` (appends to outbox) and
+   `engine.applyPatch` (advances serverBase). Nothing else touches state.
+4. The materialised view is a **computed** layer — not stored — so it can
+   never drift from the inputs.
+
+### 0.2 Route tree and the RSC ↔ client island boundary
+
+```mermaid
+flowchart TB
+  Root["app/layout.tsx (RSC)<br/>html, body, tokens, globals"]
+  Marketing["/ (RSC)<br/>marketing pitch + CTA"]
+  Login["/login (RSC)<br/>auth gate inverse:<br/>redirect to /app if signed in"]
+  Signup["/signup (RSC)<br/>auth gate inverse"]
+  LoginForm["LoginForm (client)<br/>POST /api/auth/login"]
+  SignupForm["SignupForm (client)<br/>POST /api/auth/signup"]
+
+  AppGate["/app/layout.tsx (RSC)<br/>auth gate · redirect to /login on no cookie"]
+
+  EngineProvider["EngineProvider (client)<br/>opens IDB(slipstream:userId),<br/>HttpTransport, WebSocketPokeChannel"]
+  AppShell["AppShell (client)<br/>sidebar + content slot"]
+
+  AppHome["/app/page.tsx (client)<br/>onboarding or auto-redirect to first project"]
+  ProjectPage["/app/[projectId]/page.tsx (client)<br/>list view (M4b)"]
+  Board["/app/[projectId]/board (client)<br/>board view (M4c)"]
+  Detail["/app/[projectId]/[issueId] (client)<br/>issue detail overlay (M4c)"]
+
+  AuthProxy["/api/auth/[...path]<br/>route handler · dev proxy only<br/>(Traefik in prod)"]
+
+  Root --> Marketing
+  Root --> Login --> LoginForm
+  Root --> Signup --> SignupForm
+  Root --> AppGate
+  AppGate --> EngineProvider
+  EngineProvider --> AppShell
+  AppShell --> AppHome
+  AppShell --> ProjectPage
+  AppShell --> Board
+  AppShell --> Detail
+
+  Root --> AuthProxy
+  LoginForm -.calls.-> AuthProxy
+  SignupForm -.calls.-> AuthProxy
+
+  classDef rsc fill:#1a3a52,stroke:#6ea8ff,color:#e6e8eb
+  classDef client fill:#2d4a2d,stroke:#3fbf6c,color:#e6e8eb
+  classDef proxy fill:#3a2a3a,stroke:#bf6eaa,color:#e6e8eb
+
+  class Root,Marketing,Login,Signup,AppGate rsc
+  class LoginForm,SignupForm,EngineProvider,AppShell,AppHome,ProjectPage,Board,Detail client
+  class AuthProxy proxy
+```
+
+**Invariant**: nothing under `/app` is server-rendered with synced data. The
+RSC layout's only job is the cookie check. Everything inside `EngineProvider`
+is computed from the materialised view, in the browser.
+
+### 0.3 Mutation lifecycle — what happens between a user click and another tab seeing the change
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant UI as Component<br/>(client)
+  participant Engine as Engine<br/>(zustand + outbox)
+  participant IDB as IndexedDB
+  participant Sync as Sync server<br/>(/api/push, /api/pull)
+  participant Mongo as MongoDB<br/>(replica set)
+  participant WS as WebSocket<br/>broker
+  participant Other as Other tab
+
+  User->>UI: click "Create" / change status
+  UI->>Engine: mutate("createIssue", args)
+  Engine->>IDB: appendOutbox(mutation)
+  Engine->>Engine: recomputeView()<br/>(replay outbox)
+  Engine-->>UI: zustand notifies — re-render
+  Note over UI: row appears with<br/>"pending" pill (version=0)
+
+  UI->>Engine: sync()
+  Engine->>Sync: POST /api/push {clientID, mutations[]}
+  Sync->>Mongo: withTransaction:<br/>for each new mut: $inc counter, run mutator, stamp version<br/>upsert clients.lastMutationID
+  Mongo-->>Sync: ok
+  Sync->>WS: broker.pokeAll()
+  Sync-->>Engine: { lastMutationID, cookie }
+  Engine->>IDB: dropOutboxUpTo(lastMutationID)
+
+  Engine->>Sync: POST /api/pull { cookie }
+  Sync->>Mongo: find entities where version > cookie
+  Mongo-->>Sync: patch
+  Sync-->>Engine: { patch, cookie, lastMutationID }
+  Engine->>IDB: putServerEntity for each
+  Engine->>Engine: recomputeView()
+  Engine-->>UI: zustand notifies — re-render
+  Note over UI: row now has<br/>real version, badge gone
+
+  WS-->>Other: poke
+  Other->>Sync: POST /api/pull { cookie }
+  Sync-->>Other: { patch, ... }
+  Other->>Other: applyPatch + recomputeView
+  Note over Other: same row appears<br/>within a tick of the original click
+```
+
+### 0.4 Auth flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant Form as SignupForm<br/>(client)
+  participant Web as web container<br/>(Next route handler)
+  participant Sync as sync container<br/>(/api/auth/signup)
+  participant Mongo as MongoDB
+  participant Browser as Browser cookie jar
+  participant Gate as /app layout (RSC)
+  participant Engine as EngineProvider
+
+  User->>Form: email + password + display name
+  Form->>Web: POST /api/auth/signup
+  Note over Web,Sync: In production Traefik routes /api/auth/*<br/>directly to sync. In dev this Next handler<br/>proxies through to SYNC_ORIGIN.
+  Web->>Sync: POST /api/auth/signup
+  Sync->>Sync: Argon2 hash password
+  Sync->>Mongo: insert account
+  Sync->>Sync: applyPush (createWorkspace + createProject)
+  Sync->>Mongo: insert session row<br/>(expiresAt = now + 30d)
+  Sync-->>Web: 200 + Set-Cookie<br/>slipstream_session=...<br/>HttpOnly · SameSite=Lax · Secure on https
+  Web-->>Form: 200 + cookie
+  Form->>Browser: cookie stored
+
+  User->>Gate: navigate to /app
+  Gate->>Sync: GET /api/auth/me<br/>Cookie: slipstream_session=...
+  Sync->>Mongo: find session, validate expiresAt
+  Sync-->>Gate: { user: { userId, email, workspaceId } }
+  Gate->>Engine: render with me prop
+  Engine->>Engine: openClientStorage("slipstream:{userId}")<br/>HttpTransport(""), WebSocketPokeChannel(wss)
+  Engine->>Sync: first sync() — pull
+  Sync-->>Engine: workspace + project (bootstrapped at signup)
+```
+
+### 0.5 Container view
+
+```mermaid
+flowchart LR
+  subgraph Edge["Edge (Cloudflare DNS-01)"]
+    DNS["tracker.hiten.dev<br/>A record"]
+  end
+
+  subgraph Host["Synology NAS — Docker host"]
+    direction LR
+    Traefik["Traefik 3<br/>routes by path:<br/>/api/sync, /push, /pull, /auth → sync<br/>everything else → web"]
+
+    subgraph Stack["slipstream stack (this repo)"]
+      direction TB
+      Web["web<br/>Next.js standalone<br/>:3000<br/>marketing + auth + /app island"]
+      SyncSvc["sync<br/>Hono on Node<br/>:8787<br/>/api/auth, /api/push, /api/pull, /api/sync (WS)"]
+      Db["db<br/>MongoDB 4.4<br/>single-node replica set rs0<br/>:27017 (internal only)"]
+    end
+  end
+
+  subgraph Client["Browser"]
+    Tab["tab · client island<br/>Engine + IDB + WS"]
+  end
+
+  Tab -- "HTTPS" --> DNS
+  DNS --> Traefik
+  Traefik -- "Host(tracker.hiten.dev)<br/>+ PathPrefix(/api/*)" --> SyncSvc
+  Traefik -- "Host(tracker.hiten.dev)<br/>default" --> Web
+
+  Web -. "/api/auth proxy<br/>(dev only)" .-> SyncSvc
+  Web -. "getMe SSR" .-> SyncSvc
+
+  SyncSvc -- "rs0 mongo driver<br/>internal Docker net" --> Db
+
+  classDef host fill:#1a3a52,stroke:#6ea8ff,color:#e6e8eb
+  classDef stack fill:#2d4a2d,stroke:#3fbf6c,color:#e6e8eb
+  classDef client fill:#3a2a3a,stroke:#bf6eaa,color:#e6e8eb
+  classDef edge fill:#2a2f37,stroke:#9aa3ad,color:#e6e8eb
+
+  class Traefik host
+  class Web,SyncSvc,Db stack
+  class Tab client
+  class DNS edge
+```
+
 ---
 
 ## 1. Goals (frontend-specific)
