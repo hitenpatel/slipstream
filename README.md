@@ -5,7 +5,7 @@
 > with a global counter that serialises concurrent writes into one total order. The issue tracker on
 > top is the demo — the engine is the work.
 
-**Live:** [tracker.hiten-patel.co.uk](https://tracker.hiten-patel.co.uk) ·
+**Live:** [tracker.hiten.dev](https://tracker.hiten.dev) ·
 **Design write-up:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 
 ---
@@ -40,7 +40,7 @@ designed and built here, not bought in.
 
 ```
                 ┌─────────────────────────────────────────────────────────┐
-                │              tracker.hiten-patel.co.uk                  │
+                │              tracker.hiten.dev                  │
                 │              (Traefik · Let's Encrypt DNS-01)           │
                 └────────────┬────────────────────────────┬───────────────┘
                              │ /api/sync,push,pull        │ everything else
@@ -119,17 +119,13 @@ docker compose -f infra/docker-compose.yml up --build
 
 The production stack runs on a homelab box behind an existing Traefik instance, joined to the
 `home-server_frontend` network. Certificates are issued via the Cloudflare DNS-01 challenge already
-configured on that Traefik, so `tracker.hiten-patel.co.uk` gets a real cert with no extra config.
+configured on that Traefik, so `tracker.hiten.dev` gets a real cert without any HTTP-01 reachability
+work.
 
 Deploy is GitHub Actions on `main` only — fork PRs can't reach the box because the deploy step is
 gated to `refs/heads/main`. The hosted runner joins the tailnet over Tailscale OAuth, SSHes to the
 box as the `deploy` user, and runs `docker compose up -d --build`. Self-hosted runners are
 deliberately not attached to this public repo (forks could run code on them).
-
-> **Deviation from the PRD:** the live demo is on `tracker.hiten-patel.co.uk`, not `tracker.hiten.dev`.
-> The Traefik instance and Cloudflare DNS challenge are already wired for the `hiten-patel.co.uk`
-> zone; pointing at a different zone would mean parallel infra for no portfolio value. The build,
-> code and protocol are unchanged.
 
 ## License
 

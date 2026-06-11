@@ -5,9 +5,8 @@
 #   - entrypoint:     web-secure
 #   - cert resolver:  myresolver (Cloudflare DNS-01)
 #
-# tracker.hiten-patel.co.uk resolves through the Cloudflare wildcard A record,
-# so no DNS change is needed when bringing this up — Traefik issues the cert on
-# first request via the DNS challenge.
+# tracker.hiten.dev resolves to this box; Traefik issues the cert via DNS-01
+# on first request because the Cloudflare token already covers the zone.
 
 services:
   db:
@@ -45,7 +44,7 @@ services:
       - com.centurylinklabs.watchtower.enable=false
       - traefik.enable=true
       - traefik.docker.network=home-server_frontend
-      - "traefik.http.routers.slipstream-sync.rule=Host(`tracker.hiten-patel.co.uk`) && (PathPrefix(`/api/sync`) || PathPrefix(`/api/push`) || PathPrefix(`/api/pull`))"
+      - "traefik.http.routers.slipstream-sync.rule=Host(`tracker.hiten.dev`) && (PathPrefix(`/api/sync`) || PathPrefix(`/api/push`) || PathPrefix(`/api/pull`))"
       - traefik.http.routers.slipstream-sync.priority=100
       - traefik.http.routers.slipstream-sync.entryPoints=web-secure
       - traefik.http.routers.slipstream-sync.tls=true
@@ -59,7 +58,7 @@ services:
     container_name: slipstream-web
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_SYNC_URL: https://tracker.hiten-patel.co.uk
+      NEXT_PUBLIC_SYNC_URL: https://tracker.hiten.dev
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env}
       MONGODB_URI: mongodb://db:27017/slipstream?replicaSet=rs0
       PORT: "3000"
@@ -74,7 +73,7 @@ services:
       - com.centurylinklabs.watchtower.enable=false
       - traefik.enable=true
       - traefik.docker.network=home-server_frontend
-      - traefik.http.routers.slipstream-web.rule=Host(`tracker.hiten-patel.co.uk`)
+      - traefik.http.routers.slipstream-web.rule=Host(`tracker.hiten.dev`)
       - traefik.http.routers.slipstream-web.entryPoints=web-secure
       - traefik.http.routers.slipstream-web.tls=true
       - traefik.http.routers.slipstream-web.tls.certresolver=myresolver

@@ -32,7 +32,7 @@ Three long-lived containers behind an existing Traefik proxy:
 | `sync` | Hono on Node. Owns the authoritative mutation log; runs mutators server-side inside MongoDB multi-document transactions. Exposes `/api/push`, `/api/pull`, and the `/api/sync` WebSocket. |
 | `db` | MongoDB 8 as a single-node replica set. Transactions require a replica set; the single node keeps the homelab footprint honest. |
 
-The browser talks to `tracker.hiten-patel.co.uk` over TLS. Traefik routes:
+The browser talks to `tracker.hiten.dev` over TLS. Traefik routes:
 
 - `/api/sync`, `/api/push`, `/api/pull` → `sync:8787`
 - everything else → `web:3000`

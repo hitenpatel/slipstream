@@ -42,14 +42,12 @@ changing anything in `packages/protocol` or `packages/client`.
 - Do not add a SaaS sync provider (Liveblocks, Firebase, Yjs, hosted Replicache). Building the engine
   is the point.
 
-## Deviations from the original PRD (intentional)
-- Domain: `tracker.hiten-patel.co.uk` rather than `tracker.hiten.dev`. The existing Traefik on the
-  host is wired with the Cloudflare DNS-01 challenge for the `hiten-patel.co.uk` zone, and a wildcard
-  A record already resolves there. The PRD's "flip any of these in CLAUDE.md and the brief still
-  holds" applies.
-- Traefik network: `home-server_frontend` (the existing external network), entrypoint `web-secure`,
-  cert resolver `myresolver`. Mirror this in any new compose labels.
-- Next.js: 15.1.4 with React 19 at M0. The PRD's Next 16 / Cache Components / React Compiler upgrade
+## Infra specifics (mirror these in any new compose labels)
+- Domain: `tracker.hiten.dev` as the PRD specifies; a Cloudflare A record points at the box and the
+  existing Traefik's `myresolver` issues the cert via DNS-01.
+- Traefik network: `home-server_frontend` (external), entrypoint `web-secure`, cert resolver
+  `myresolver`.
+- Next.js: 15.1.4 + React 19 at M0. The PRD's Next 16 / Cache Components / React Compiler upgrade
   is scheduled for M4 when the real app surface lands; don't drag it forward.
 
 ## Definition of done (per PR)

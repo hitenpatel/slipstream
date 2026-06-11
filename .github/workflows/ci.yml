@@ -57,7 +57,7 @@ jobs:
           tags: slipstream-web:ci
 
   deploy:
-    name: deploy to tracker.hiten-patel.co.uk
+    name: deploy to tracker.hiten.dev
     runs-on: ubuntu-latest
     needs: [verify, docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
