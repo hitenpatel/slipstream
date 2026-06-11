@@ -59,7 +59,7 @@ services:
       - com.centurylinklabs.watchtower.enable=false
       - traefik.enable=true
       - traefik.docker.network=home-server_frontend
-      - "traefik.http.routers.slipstream-sync.rule=Host(`tracker.hiten.dev`) && (PathPrefix(`/api/sync`) || PathPrefix(`/api/push`) || PathPrefix(`/api/pull`))"
+      - "traefik.http.routers.slipstream-sync.rule=Host(`tracker.hiten.dev`) && (PathPrefix(`/api/sync`) || PathPrefix(`/api/push`) || PathPrefix(`/api/pull`) || PathPrefix(`/api/auth`))"
       - traefik.http.routers.slipstream-sync.priority=100
       - traefik.http.routers.slipstream-sync.entryPoints=web-secure
       - traefik.http.routers.slipstream-sync.tls=true

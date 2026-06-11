@@ -1,6 +1,10 @@
+import { getMe } from "@/lib/session";
 import styles from "./page.module.css";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const me = await getMe();
   return (
     <main className={styles.main}>
       <section className={styles.hero} aria-labelledby="pitch-title">
@@ -26,6 +30,16 @@ export default function HomePage() {
           <li><strong>M5</strong> Accessibility: keyboard DnD, live regions, axe-clean</li>
           <li><strong>M6</strong> Presence, polish, the front-door README</li>
         </ul>
+        <p className={styles.ctaRow}>
+          {me ? (
+            <a className={styles.cta} href="/app">Open your workspace →</a>
+          ) : (
+            <>
+              <a className={styles.cta} href="/signup">Create an account</a>
+              <a className={styles.ctaGhost} href="/login">Sign in</a>
+            </>
+          )}
+        </p>
         <p className={styles.linkRow}>
           <a href="https://github.com/hitenpatel/slipstream" rel="noreferrer noopener">
             Repository on GitHub
