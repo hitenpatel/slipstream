@@ -1,0 +1,135 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 55%, transparent);
+  display: grid;
+  place-items: start center;
+  padding: 12vh var(--space-4) var(--space-6);
+  z-index: 40;
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  width: min(640px, 100%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 60px rgba(0,0,0,0.5);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  max-height: 70dvh;
+  overflow: hidden;
+}
+
+.input {
+  font: inherit;
+  font-size: 1rem;
+  padding: var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+  outline: none;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 1px;
+}
+
+.option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px var(--space-4);
+  cursor: pointer;
+  font-size: 0.9375rem;
+}
+
+.option[data-focused="true"] {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.kindTag {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface-2);
+}
+
+.itemLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.empty {
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.footer {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+}
+
+.footer kbd {
+  font-family: var(--font-mono);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin: 0 2px;
+}
+
+/* Floating "Cmd-K for commands" hint at the bottom of the viewport */
+.hint {
+  position: fixed;
+  bottom: var(--space-3);
+  right: var(--space-3);
+  z-index: 5;
+  padding: 4px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.hint kbd {
+  font-family: var(--font-mono);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin: 0 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim { backdrop-filter: none; }
+}
+
+@media (max-width: 720px) {
+  .hint { display: none; }
+}
