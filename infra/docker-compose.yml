@@ -21,15 +21,25 @@ services:
       - slipstream-db:/data/db
     networks: [internal]
     healthcheck:
-      # Self-initiates the single-node replica set on first healthy run.
-      # Transactions on Mongo require a replica set even with one node.
-      # Mongo 4.4 ships the legacy `mongo` shell; we'll switch to `mongosh`
-      # when the host can run Mongo 5+.
-      test: >
-        bash -c "mongo --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'db:27017' }] }) }\""
-      interval: 10s
+      # Self-initiates the single-node replica set on first healthy run, then
+      # reports healthy once it has a PRIMARY. Mongo 4.4's `rs.status()` returns
+      # {ok:0} instead of throwing when the set isn't initialised, so we have to
+      # check the ok flag explicitly. Transactions need a replica set even with
+      # one node; we'll switch to `mongosh` when the host can run Mongo 5+.
+      test:
+        - CMD-SHELL
+        - |
+          mongo --quiet --eval '
+            var s = rs.status();
+            if (!s.ok) {
+              rs.initiate({_id:"rs0",members:[{_id:0,host:"db:27017"}]});
+              quit(1);
+            }
+            quit(s.myState === 1 ? 0 : 1);
+          '
+      interval: 5s
       start_period: 30s
-      retries: 12
+      retries: 20
 
   sync:
     build:
