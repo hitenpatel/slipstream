@@ -242,12 +242,14 @@ export function CommandPalette({
   if (!open) return <PaletteHint />;
 
   return (
-    <div
-      className={styles.scrim}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) setOpen(false);
-      }}
-    >
+    <div className={styles.scrim}>
+      {/* Decorative backdrop + tab-reachable close button at the same position. */}
+      <button
+        type="button"
+        className={styles.scrimButton}
+        aria-label="Close palette"
+        onClick={() => setOpen(false)}
+      />
       <div role="dialog" aria-label="Command palette" className={styles.dialog}>
         <input
           ref={inputRef}
@@ -277,6 +279,10 @@ export function CommandPalette({
             </li>
           ) : (
             filtered.map((item, idx) => (
+              /* WAI-ARIA combobox listbox options: keyboard activation goes
+                 through the input's aria-activedescendant + Enter, not via
+                 per-option keydown. The onClick is a mouse-only convenience. */
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events
               <li
                 key={item.id}
                 id={`${listboxId}-opt-${idx}`}

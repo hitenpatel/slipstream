@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Project } from "@slipstream/protocol";
 import { uuidv7 } from "@slipstream/protocol";
 import { useEngine, useEngineState } from "./engine-provider";
@@ -34,6 +34,14 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
   const [creating, setCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectKey, setNewProjectKey] = useState("");
+  const projectInputRef = useRef<HTMLInputElement>(null);
+
+  // Move focus to the new-project name field once the form opens.
+  // This is the accessible alternative to autoFocus, which fires on mount
+  // and can surprise screen readers.
+  useEffect(() => {
+    if (creating) projectInputRef.current?.focus();
+  }, [creating]);
 
   async function onCreateProject(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -85,10 +93,10 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
               <label>
                 <span className={styles.srOnly}>Project name</span>
                 <input
+                  ref={projectInputRef}
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
                   placeholder="Project name"
-                  autoFocus
                   required
                 />
               </label>

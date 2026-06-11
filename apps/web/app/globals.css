@@ -37,4 +37,11 @@
       transition-duration: 0.01ms !important;
     }
   }
+  /* Forced-colors mode: replace tokenised focus + accent indicators with
+     system colours so high-contrast users still see focus and selection. */
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+  }
 }

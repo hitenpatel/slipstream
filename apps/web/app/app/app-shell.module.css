@@ -180,6 +180,20 @@
   .badge[data-syncing="true"] .dot { animation: none; }
 }
 
+/* Forced-colors mode: background colours collapse to Canvas. Use border +
+   system colours so status pills, active project links, and the coloured
+   dot stay visible. */
+@media (forced-colors: active) {
+  .badge { border-color: CanvasText; }
+  .dot { background: transparent; border: 1px solid CanvasText; }
+  .badge[data-online="true"] .dot { background: Highlight; }
+  .badge[data-syncing="true"] .dot { background: HighlightText; border-color: Highlight; }
+  .projectLink[data-active="true"] {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 .ghost {
   font: inherit;
   background: transparent;

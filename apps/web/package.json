@@ -11,6 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@slipstream/client": "workspace:*",
     "@slipstream/protocol": "workspace:*",
     "@slipstream/ui": "workspace:*",
@@ -25,6 +28,12 @@
     "@types/react-dom": "19.0.2",
     "eslint": "9.17.0",
     "eslint-config-next": "15.1.4",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@vitejs/plugin-react": "4.3.4",
+    "axe-core": "4.10.2",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "happy-dom": "15.11.7",
     "vitest": "2.1.8"
   }
 }
