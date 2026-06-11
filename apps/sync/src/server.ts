@@ -7,6 +7,7 @@ import {
   PullRequestSchema,
   PushRequestSchema,
 } from "@slipstream/protocol";
+import { createAuthRoutes } from "./auth.js";
 import { connect, type SlipstreamDb } from "./db.js";
 import { applyPush } from "./push.js";
 import { pull } from "./pull.js";
@@ -57,6 +58,8 @@ export function createApp(deps: AppDeps): Hono {
     const res = await pull(db, parsed.data);
     return c.json(res);
   });
+
+  app.route("/", createAuthRoutes(db));
 
   return app;
 }
