@@ -14,6 +14,7 @@ import {
   type PushResponse,
 } from "@slipstream/protocol";
 import { Engine } from "./engine.js";
+import { ManualPokeChannel } from "./poke-channel.js";
 import { MemoryClientStorage } from "./storage.js";
 import type { Transport } from "./transport.js";
 
@@ -176,6 +177,46 @@ describe("Engine — single client", () => {
     expect(eng.get("workspace", wsId)?.name).toBe("Acme");
   });
 });
+
+describe("Engine — poke channel", () => {
+  it("syncs automatically when the poke channel fires", async () => {
+    const server = new FakeServer();
+    const aliceCh = new ManualPokeChannel();
+    const bobCh = new ManualPokeChannel();
+
+    const alice = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: server.asTransport(),
+      pokeChannel: aliceCh,
+    });
+    const bob = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: server.asTransport(),
+      pokeChannel: bobCh,
+    });
+
+    const wsId = uuidv7();
+    await alice.mutate("createWorkspace", { id: wsId, name: "Acme" });
+    await alice.sync();
+
+    // bob hasn't synced; fire his poke channel and let the async chain run
+    expect(bob.get("workspace", wsId)).toBeUndefined();
+    bobCh.fire();
+    // wait for the chained syncing to settle
+    await waitUntil(() => bob.get("workspace", wsId)?.name === "Acme");
+
+    alice.close();
+    bob.close();
+  });
+});
+
+async function waitUntil(cond: () => boolean, timeoutMs = 1000, stepMs = 5): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error("waitUntil timed out");
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+}
 
 describe("Engine — two-client convergence", () => {
   it("two clients with interleaved offline edits converge to identical state", async () => {
