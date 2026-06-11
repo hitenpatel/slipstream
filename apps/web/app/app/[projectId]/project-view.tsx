@@ -130,13 +130,6 @@ function IssueRow({
 }): React.JSX.Element {
   const optimistic = issue.version === 0;
 
-  function onTitleKey(e: React.KeyboardEvent): void {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onOpen();
-    }
-  }
-
   return (
     <li className={styles.row} data-optimistic={optimistic ? "true" : "false"}>
       <select
@@ -147,7 +140,6 @@ function IssueRow({
           const next = IssueStatus.safeParse(e.target.value);
           if (next.success) onStatus(next.data);
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {STATUSES.map((s) => (
           <option key={s} value={s}>
@@ -155,15 +147,9 @@ function IssueRow({
           </option>
         ))}
       </select>
-      <span
-        role="button"
-        tabIndex={0}
-        className={styles.title2}
-        onClick={onOpen}
-        onKeyDown={onTitleKey}
-      >
+      <button type="button" className={styles.title2} onClick={onOpen}>
         {issue.title}
-      </span>
+      </button>
       <LabelDots labelIds={issue.labelIds} labels={labels} />
       {optimistic ? (
         <span className={styles.optimistic} aria-label="Not yet confirmed by the server">

@@ -127,6 +127,30 @@
 .title2 {
   flex: 1;
   min-width: 0;
+  text-align: left;
+  font: inherit;
+  background: none;
+  border: 1px solid transparent;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.title2:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.title2:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+@media (forced-colors: active) {
+  .title2:focus-visible { outline-color: Highlight; }
+  .row { border-color: CanvasText; }
+  .row[data-optimistic="true"] { border-color: Highlight; }
 }
 
 .optimistic {

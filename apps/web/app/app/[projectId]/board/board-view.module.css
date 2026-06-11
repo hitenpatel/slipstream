@@ -64,16 +64,15 @@
 }
 
 .card {
-  display: block;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--space-3);
-  cursor: pointer;
-  text-align: left;
   display: grid;
   gap: var(--space-2);
+  cursor: grab;
   transition: border-color 120ms ease, box-shadow 120ms ease;
+  touch-action: none;
 }
 
 .card:hover {
@@ -87,6 +86,42 @@
 
 .card[data-optimistic="true"] {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+}
+
+.card[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.cardDrag {
+  background: var(--color-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  width: 240px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.openButton {
+  background: none;
+  border: 1px solid transparent;
+  text-align: left;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.openButton:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.openButton:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 .cardTitle {
@@ -110,17 +145,18 @@
   color: var(--color-accent);
 }
 
-.moveSelect {
-  font: inherit;
-  font-size: 0.75rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border);
-  background: transparent;
-  color: var(--color-text-muted);
-  margin-left: auto;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
+}
+
+/* Forced-colors mode (Windows High Contrast, NVDA + Edge) — replace the
+   tokenised colours with system colours so the UI stays usable when the OS
+   overrides our palette. */
+@media (forced-colors: active) {
+  .card { border-color: CanvasText; }
+  .card:focus-visible { outline-color: Highlight; }
+  .card[data-optimistic="true"],
+  .card:hover { border-color: Highlight; }
+  .cardDrag { border-color: Highlight; box-shadow: none; }
+  .openButton:focus-visible { outline-color: Highlight; }
 }

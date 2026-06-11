@@ -54,12 +54,16 @@ export function IssueDetailDialog({ projectId }: { projectId: string }): React.J
   if (!issueId || !issue || !project) return null;
 
   return (
-    <div
-      className={styles.scrim}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
+    <div className={styles.scrim}>
+      {/* The scrim is a decorative backdrop; the close-on-click affordance
+         lives on a same-position button below so AT users get a Close action
+         without the scrim itself needing interactive semantics. */}
+      <button
+        type="button"
+        className={styles.scrimButton}
+        aria-label="Close dialog"
+        onClick={close}
+      />
       <div
         ref={dialogRef}
         role="dialog"
