@@ -1,11 +1,15 @@
-# Slipstream — Architecture
+# Slipstream — Architecture (Backend & Protocol)
 
-> Status: M0 (scaffold + hello-world). Sections describing the engine, transport and UI describe the
-> **target design**; the items not yet implemented are marked with `→ M{n}`.
+> Status (current): M0–M3 are shipped, M4a is in. The engine, the transport, the auth layer and the
+> bootstrapped workspace are live at `tracker.hiten.dev`. Sections marked `→ M{n}` are still to come.
 
-This document is the system design write-up for Slipstream's sync engine. It is intentionally written
-to stand on its own — readable without the code — because the design is half the portfolio value of
-the project.
+This document is the system design write-up for Slipstream's **sync engine, protocol, server, and
+infrastructure**. It is intentionally written to stand on its own — readable without the code —
+because the design is half the portfolio value of the project.
+
+The **frontend** design (route tree, state model, RSC vs client island boundary, accessibility plan)
+lives in a companion document: [`docs/FRONTEND.md`](./FRONTEND.md). The two are deliberately separate
+so the protocol/engine layer can be read independently from the application that consumes it.
 
 ---
 
