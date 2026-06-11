@@ -25,15 +25,13 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 ENV NODE_ENV=production
 ENV PORT=8787
 
-RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs sync
-
 COPY --from=build /repo/pnpm-workspace.yaml /repo/package.json /repo/pnpm-lock.yaml* ./
 COPY --from=build /repo/apps/sync/package.json apps/sync/package.json
 COPY --from=build /repo/packages/protocol/package.json packages/protocol/package.json
 COPY --from=build /repo/apps/sync/dist apps/sync/dist
 COPY --from=build /repo/packages/protocol/dist packages/protocol/dist
-RUN pnpm install --prod --frozen-lockfile || pnpm install --prod --no-frozen-lockfile
+RUN chown -R node:node /app && pnpm install --prod --frozen-lockfile || pnpm install --prod --no-frozen-lockfile
 
-USER sync
+USER node
 EXPOSE 8787
 CMD ["node", "apps/sync/dist/server.js"]
