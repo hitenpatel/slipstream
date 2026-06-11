@@ -23,8 +23,10 @@ services:
     healthcheck:
       # Self-initiates the single-node replica set on first healthy run.
       # Transactions on Mongo require a replica set even with one node.
+      # Mongo 4.4 ships the legacy `mongo` shell; we'll switch to `mongosh`
+      # when the host can run Mongo 5+.
       test: >
-        bash -c "mongosh --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'db:27017' }] }) }\""
+        bash -c "mongo --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'db:27017' }] }) }\""
       interval: 10s
       start_period: 30s
       retries: 12
