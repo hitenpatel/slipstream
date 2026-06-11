@@ -1,4 +1,9 @@
-// M0 placeholder. Real entities, mutators, Zod schemas and protocol types land in M1.
-// See docs/ARCHITECTURE.md for the design.
+export const PROTOCOL_VERSION = 1 as const;
 
-export const PROTOCOL_VERSION = 0 as const;
+export * from "./entities.js";
+export * from "./fractional.js";
+export * from "./ids.js";
+export * from "./memory-tx.js";
+export * from "./mutators.js";
+export * from "./protocol.js";
+export * from "./tx.js";
