@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getMe } from "@/lib/session";
 import styles from "./page.module.css";
 
@@ -32,11 +33,11 @@ export default async function HomePage() {
         </ul>
         <p className={styles.ctaRow}>
           {me ? (
-            <a className={styles.cta} href="/app">Open your workspace →</a>
+            <Link className={styles.cta} href="/app">Open your workspace →</Link>
           ) : (
             <>
-              <a className={styles.cta} href="/signup">Create an account</a>
-              <a className={styles.ctaGhost} href="/login">Sign in</a>
+              <Link className={styles.cta} href="/signup">Create an account</Link>
+              <Link className={styles.ctaGhost} href="/login">Sign in</Link>
             </>
           )}
         </p>

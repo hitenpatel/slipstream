@@ -27,7 +27,7 @@ export function createApp(deps: AppDeps): Hono {
       ok: true,
       service: "slipstream-sync",
       protocolVersion: PROTOCOL_VERSION,
-      milestone: "M3",
+      milestone: "M4",
       connectedClients: broker.size(),
     }),
   );
