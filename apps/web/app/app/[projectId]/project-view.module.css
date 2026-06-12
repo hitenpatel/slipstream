@@ -1,9 +1,12 @@
 .main {
-  padding: var(--space-8) var(--space-6);
+  padding: var(--space-6) var(--space-6) 0;
   max-width: 880px;
   margin: 0 auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
+  height: 100%;
+  min-height: 0;
 }
 
 .header {

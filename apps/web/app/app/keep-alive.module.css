@@ -1,0 +1,33 @@
+/**
+ * KeepAlive: the inactive subtree stays mounted but is hidden + removed
+ * from layout. Using `display:none` would unmount scroll containers; we
+ * want them to keep their scroll position. So we use `visibility:hidden`
+ * + `position:absolute` to take the inactive subtree out of layout flow
+ * while preserving its internal scroll state.
+ */
+
+.frame {
+  /* Active and inactive frames share the same grid cell; CSS toggles which
+     one is in flow. */
+  grid-row: 1;
+  grid-column: 1;
+  min-width: 0;
+}
+
+.frame[data-active="false"] {
+  visibility: hidden;
+  pointer-events: none;
+  /* Position out of normal flow but keep dimensions so child overflow:auto
+     containers still hold their scrollTop. */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Browsers may still paint the hidden subtree; we hint that they shouldn't. */
+  content-visibility: hidden;
+}
+
+.frame[data-active="true"] {
+  position: relative;
+  z-index: 1;
+}

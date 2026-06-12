@@ -1,13 +1,5 @@
-"use client";
-
-import { use } from "react";
-import { BoardView } from "./board-view";
-
-export default function BoardPage({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}): React.JSX.Element {
-  const { projectId } = use(params);
-  return <BoardView projectId={projectId} />;
+// The board view is mounted by the project layout via <KeepAlive>. This file
+// exists only so Next registers the /app/[projectId]/board route.
+export default function BoardRoute(): null {
+  return null;
 }
