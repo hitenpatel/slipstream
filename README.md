@@ -14,11 +14,6 @@
 **Live demo:** [tracker.hiten.dev](https://tracker.hiten.dev) · sign up, open two browsers,
 watch them converge.
 
-**Watch a 30-second demo:**
-<!-- Replace the URL below with the Loom share link after recording.
-     The recording script lives in tools/demo/. -->
-[![Slipstream — 30-second demo](https://img.shields.io/badge/▶_Watch_demo-30_seconds-6ea8ff?style=for-the-badge)](https://www.loom.com/share/REPLACE_WITH_LOOM_ID)
-
 **Read it as a system design:**
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) (backend + protocol + ADRs) ·
 [`docs/FRONTEND.md`](./docs/FRONTEND.md) (frontend, six Mermaid diagrams in §0).
