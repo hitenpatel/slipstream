@@ -1,0 +1,12 @@
+/**
+ * Single-cell grid so the two KeepAlive frames overlap. Relative positioning
+ * lets each frame's absolutely-positioned hidden state stay bounded.
+ */
+.viewport {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  min-height: 0;
+  flex: 1;
+}

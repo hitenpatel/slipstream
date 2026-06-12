@@ -14,6 +14,7 @@ import { useEngine } from "../engine-provider";
 import { STATUS_LABEL, applyFilters, useFilters } from "./filters";
 import { useProjectData } from "./hooks";
 import { LabelDots } from "./label-dots";
+import { VirtualIssueList } from "./virtual-issue-list";
 import styles from "./project-view.module.css";
 
 const STATUSES: IssueStatusT[] = ["backlog", "todo", "in_progress", "done", "cancelled"];
@@ -98,18 +99,19 @@ export function ProjectView({ projectId }: { projectId: string }): React.JSX.Ele
             : "No issues match the current filters."}
         </p>
       ) : (
-        <ul className={styles.list} aria-label={`${project.name} issues`}>
-          {filtered.map((issue) => (
+        <VirtualIssueList
+          issues={filtered}
+          ariaLabel={`${project.name} issues`}
+          renderRow={(issue) => (
             <IssueRow
-              key={issue.id}
               issue={issue}
               labels={labels}
               onStatus={(s) => setStatus(issue.id, s)}
               onDelete={() => deleteIssue(issue.id)}
               onOpen={() => openIssue(issue.id)}
             />
-          ))}
-        </ul>
+          )}
+        />
       )}
     </main>
   );
@@ -131,7 +133,7 @@ function IssueRow({
   const optimistic = issue.version === 0;
 
   return (
-    <li className={styles.row} data-optimistic={optimistic ? "true" : "false"}>
+    <div className={styles.row} data-optimistic={optimistic ? "true" : "false"}>
       <select
         className={styles.statusSelect}
         value={issue.status}
@@ -164,6 +166,6 @@ function IssueRow({
       >
         ×
       </button>
-    </li>
+    </div>
   );
 }

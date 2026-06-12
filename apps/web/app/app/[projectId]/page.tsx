@@ -1,13 +1,6 @@
-"use client";
-
-import { use } from "react";
-import { ProjectView } from "./project-view";
-
-export default function ProjectPage({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}): React.JSX.Element {
-  const { projectId } = use(params);
-  return <ProjectView projectId={projectId} />;
+// The list view is mounted by the project layout via <KeepAlive>. This file
+// exists only so Next registers the /app/[projectId] route; it renders
+// nothing because the layout owns the view tree.
+export default function ListRoute(): null {
+  return null;
 }
