@@ -1,28 +1,52 @@
+import type { PresenceFocus, PresenceUser } from "@slipstream/protocol";
+
 /**
- * The poke channel is the seam between "something might be new" and "go pull".
- * Production wires a `WebSocketPokeChannel` to `/api/sync`; tests pass a
- * `ManualPokeChannel` they can fire directly.
+ * The poke channel is the seam between the server's "something happened" signals
+ * and the client. Production wires a `WebSocketPokeChannel` to `/api/sync`;
+ * tests pass a `ManualPokeChannel` they can fire directly.
  *
- * The channel doesn't carry data — it just nudges. The pull happens over HTTPS
- * via the Transport, so a dropped or restarted socket loses nothing.
+ * The channel carries two kinds of message:
+ *
+ *   - `poke`     — "the cookie advanced; go pull". This is the M3 contract.
+ *   - `presence` — the current workspace-scoped presence snapshot. M6a adds it.
+ *
+ * Pulls still happen over HTTPS (via Transport), so a dropped or restarted
+ * socket loses nothing.
  */
 export interface PokeChannel {
   /** Called every time the server sends a poke or the socket reconnects. */
   onPoke(handler: () => void): void;
+  /** Called every time the server sends an updated presence snapshot. */
+  onPresence(handler: (users: PresenceUser[]) => void): void;
+  /** Send "this is what I'm looking at right now" to the server. */
+  publishFocus(focus: PresenceFocus): void;
   /** Tear-down. Safe to call multiple times. */
   close(): void;
 }
 
 export class ManualPokeChannel implements PokeChannel {
-  private handlers = new Set<() => void>();
+  private pokeHandlers = new Set<() => void>();
+  private presenceHandlers = new Set<(u: PresenceUser[]) => void>();
+  public lastFocus: PresenceFocus = null;
+
   onPoke(h: () => void): void {
-    this.handlers.add(h);
+    this.pokeHandlers.add(h);
+  }
+  onPresence(h: (u: PresenceUser[]) => void): void {
+    this.presenceHandlers.add(h);
+  }
+  publishFocus(focus: PresenceFocus): void {
+    this.lastFocus = focus;
   }
   fire(): void {
-    for (const h of this.handlers) h();
+    for (const h of this.pokeHandlers) h();
+  }
+  emitPresence(users: PresenceUser[]): void {
+    for (const h of this.presenceHandlers) h(users);
   }
   close(): void {
-    this.handlers.clear();
+    this.pokeHandlers.clear();
+    this.presenceHandlers.clear();
   }
 }
 
@@ -49,6 +73,9 @@ type AnyWebSocketCtor = new (url: string) => globalThis.WebSocket;
 export class WebSocketPokeChannel implements PokeChannel {
   private socket: globalThis.WebSocket | null = null;
   private handlers = new Set<() => void>();
+  private presenceHandlers = new Set<(u: PresenceUser[]) => void>();
+  private pendingFocus: PresenceFocus = null;
+  private hasPublished = false;
   private closed = false;
   private backoff: number;
   private readonly minBackoff: number;
@@ -80,6 +107,26 @@ export class WebSocketPokeChannel implements PokeChannel {
     this.handlers.add(h);
   }
 
+  onPresence(h: (u: PresenceUser[]) => void): void {
+    this.presenceHandlers.add(h);
+  }
+
+  publishFocus(focus: PresenceFocus): void {
+    this.pendingFocus = focus;
+    this.flushFocus();
+  }
+
+  private flushFocus(): void {
+    if (!this.socket) return;
+    if (this.socket.readyState !== 1 /* OPEN */) return;
+    try {
+      this.socket.send(JSON.stringify({ type: "focus", focus: this.pendingFocus }));
+      this.hasPublished = true;
+    } catch {
+      // socket closing — will retry on next reconnect
+    }
+  }
+
   close(): void {
     this.closed = true;
     if (this.reconnectHandle !== null) {
@@ -100,6 +147,7 @@ export class WebSocketPokeChannel implements PokeChannel {
       }
     }
     this.handlers.clear();
+    this.presenceHandlers.clear();
   }
 
   private connect(): void {
@@ -112,14 +160,21 @@ export class WebSocketPokeChannel implements PokeChannel {
       // poke so the engine pulls anything missed during the disconnect window
       this.backoff = this.minBackoff;
       this.firePoke();
+      // re-publish the last known focus so the server's presence snapshot is
+      // current even after a reconnect
+      if (this.pendingFocus !== null || this.hasPublished) this.flushFocus();
     };
 
     socket.onmessage = (ev: MessageEvent) => {
       try {
         const msg = JSON.parse(typeof ev.data === "string" ? ev.data : String(ev.data)) as {
           type?: string;
+          users?: PresenceUser[];
         };
         if (msg.type === "poke") this.firePoke();
+        else if (msg.type === "presence" && Array.isArray(msg.users)) {
+          for (const h of this.presenceHandlers) h(msg.users);
+        }
       } catch {
         // junk frames are ignored
       }

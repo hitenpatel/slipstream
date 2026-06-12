@@ -8,6 +8,8 @@ import {
   type Mutation,
   type MutatorName,
   type PatchOp,
+  type PresenceFocus,
+  type PresenceUser,
   runMutator,
   uuidv7,
 } from "@slipstream/protocol";
@@ -32,6 +34,10 @@ export interface EngineState {
   cookie: number;
   /** uuidv7 for this client, stable across sessions. */
   clientID: string;
+  /** every workspace peer (including this user) and what they're focused on. */
+  presence: PresenceUser[];
+  /** this tab's current focus, mirrored locally so components can read it. */
+  focus: PresenceFocus;
 }
 
 export interface EngineOptions {
@@ -86,6 +92,8 @@ export class Engine {
       nextMutationId: 1,
       cookie,
       clientID,
+      presence: [],
+      focus: null,
     };
 
     const engine = new Engine(opts, initial);
@@ -109,12 +117,26 @@ export class Engine {
       opts.pokeChannel.onPoke(() => {
         void engine.sync();
       });
+      opts.pokeChannel.onPresence((users) => {
+        engine.store.setState({ presence: users });
+      });
     }
 
     return engine;
   }
 
   private pokeChannel: PokeChannel | undefined;
+
+  /**
+   * Tell the server (and through it, every other tab in the workspace) what
+   * this tab is currently looking at. Idempotent on a no-op focus change.
+   * Safe to call when no poke channel is configured (no-op).
+   */
+  publishFocus(focus: PresenceFocus): void {
+    if (sameFocus(this.store.getState().focus, focus)) return;
+    this.store.setState({ focus });
+    this.pokeChannel?.publishFocus(focus);
+  }
 
   /**
    * Stop the engine. Closes the poke channel and clears the in-memory outbox
@@ -237,4 +259,10 @@ export class Engine {
   get<K extends EntityKind>(kind: K, id: string): (Entity & { kind: K }) | undefined {
     return this.store.getState().view.get(kind, id);
   }
+}
+
+function sameFocus(a: PresenceFocus, b: PresenceFocus): boolean {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return false;
+  return a.kind === b.kind && a.id === b.id;
 }

@@ -1,21 +1,21 @@
-import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import {
+  ClientMessageSchema,
   PROTOCOL_VERSION,
   PullRequestSchema,
   PushRequestSchema,
 } from "@slipstream/protocol";
-import { createAuthRoutes } from "./auth.js";
+import { SESSION_COOKIE, createAuthRoutes, readSession } from "./auth.js";
 import { connect, type SlipstreamDb } from "./db.js";
 import { applyPush } from "./push.js";
 import { pull } from "./pull.js";
-import { PokeBroker } from "./poke.js";
+import { PresenceBroker } from "./presence.js";
 
 export interface AppDeps {
   db: SlipstreamDb;
-  broker: PokeBroker;
+  broker: PresenceBroker;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -27,7 +27,7 @@ export function createApp(deps: AppDeps): Hono {
       ok: true,
       service: "slipstream-sync",
       protocolVersion: PROTOCOL_VERSION,
-      milestone: "M4",
+      milestone: "M6",
       connectedClients: broker.size(),
     }),
   );
@@ -40,8 +40,6 @@ export function createApp(deps: AppDeps): Hono {
     }
     try {
       const res = await applyPush(db, parsed.data);
-      // Notify other tabs/clients there's something new to pull. Cheap to
-      // fan out to everyone for now (see PokeBroker for the M4 workspace scope).
       broker.pokeAll();
       return c.json(res);
     } catch (err) {
@@ -64,20 +62,48 @@ export function createApp(deps: AppDeps): Hono {
   return app;
 }
 
-/**
- * Attach a WebSocketServer to a Node HTTP server, routing upgrades on
- * /api/sync to the PokeBroker. Each socket gets a tiny `hello` from the server
- * with the current cookie, so even a freshly connected client knows whether to
- * pull. Inbound messages are silently dropped (M3 doesn't accept anything yet).
- */
 /** Anything that emits `upgrade` events the way Node's http.Server does. */
 type UpgradableServer = {
-  on(event: "upgrade", listener: (req: import("node:http").IncomingMessage, socket: import("node:net").Socket, head: Buffer) => void): unknown;
+  on(
+    event: "upgrade",
+    listener: (
+      req: import("node:http").IncomingMessage,
+      socket: import("node:net").Socket,
+      head: Buffer,
+    ) => void,
+  ): unknown;
 };
+
+/**
+ * Authenticate a WebSocket upgrade against the session cookie. Returns the
+ * authenticated session + email, or null when the request should be rejected.
+ */
+async function authenticateUpgrade(
+  db: SlipstreamDb,
+  req: import("node:http").IncomingMessage,
+): Promise<{ session: import("./auth.js").AuthedSession; email: string } | null> {
+  const cookies = parseCookies(req.headers.cookie ?? "");
+  const token = cookies.get(SESSION_COOKIE);
+  const session = await readSession(db, token);
+  if (!session) return null;
+  const account = await db.accounts.findOne({ _id: session.userId });
+  if (!account) return null;
+  return { session, email: account.email };
+}
+
+function parseCookies(header: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (!k) continue;
+    out.set(k, decodeURIComponent(rest.join("=") || ""));
+  }
+  return out;
+}
 
 export function attachSyncSocket(
   httpServer: UpgradableServer,
-  broker: PokeBroker,
+  broker: PresenceBroker,
   db: SlipstreamDb,
 ): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
@@ -88,20 +114,52 @@ export function attachSyncSocket(
       rawSocket.destroy();
       return;
     }
-    wss.handleUpgrade(req, rawSocket, head, (ws) => {
-      broker.add(ws);
-      ws.on("close", () => broker.remove(ws));
-      ws.on("error", () => broker.remove(ws));
-      // greet with the current cookie so the client can pull if it's behind
-      db.counters
-        .findOne({ _id: "global" })
-        .then((c) => {
-          ws.send(JSON.stringify({ type: "hello", clientID: "server", cookie: c?.seq ?? 0 }));
-        })
-        .catch(() => {
-          // best-effort; the client will sync anyway on first poke
+
+    void (async () => {
+      const auth = await authenticateUpgrade(db, req);
+      if (!auth) {
+        rawSocket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        rawSocket.destroy();
+        return;
+      }
+
+      wss.handleUpgrade(req, rawSocket, head, (ws) => {
+        broker.add(ws, auth.session, auth.email);
+        ws.on("close", () => broker.remove(ws));
+        ws.on("error", () => broker.remove(ws));
+
+        ws.on("message", (raw) => {
+          let parsed;
+          try {
+            parsed = ClientMessageSchema.safeParse(JSON.parse(String(raw)));
+          } catch {
+            return;
+          }
+          if (!parsed.success) return;
+          if (parsed.data.type === "focus") {
+            broker.setFocus(ws, parsed.data.focus);
+          }
+          // M3-style hello messages are dropped — the upgrade itself is the
+          // authentication step now.
         });
-    });
+
+        // Greet with the current cookie so the client can pull if it's behind.
+        db.counters
+          .findOne({ _id: "global" })
+          .then((c) => {
+            ws.send(
+              JSON.stringify({
+                type: "hello",
+                clientID: "server",
+                cookie: c?.seq ?? 0,
+              }),
+            );
+          })
+          .catch(() => {
+            // best-effort; the client will sync anyway on first poke
+          });
+      });
+    })();
   });
 
   return wss;
@@ -116,7 +174,7 @@ async function main(): Promise<void> {
   }
   const db = await connect(uri);
   await db.ensureIndexes();
-  const broker = new PokeBroker();
+  const broker = new PresenceBroker();
   const app = createApp({ db, broker });
 
   const port = Number(process.env.PORT ?? 8787);
