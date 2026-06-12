@@ -269,6 +269,50 @@ flowchart LR
   class DNS edge
 ```
 
+### 0.6 Presence and the WebSocket auth gate (M6a)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Alex
+  actor Sam
+  participant Browser_A as Alex's tab
+  participant Sync as sync container<br/>/api/sync (WS)
+  participant Mongo as MongoDB
+  participant Browser_S as Sam's tab
+
+  Alex->>Browser_A: open /app/[projectId]
+  Browser_A->>Sync: WS upgrade<br/>Cookie: slipstream_session=...
+  Sync->>Mongo: readSession + accounts lookup
+  Mongo-->>Sync: { userId, workspaceId, email }
+  Sync-->>Browser_A: 101 Switching Protocols
+  Sync->>Browser_A: { type:"hello", clientID:"server", cookie }
+  Sync->>Browser_A: { type:"presence", users:[ Alex@project ] }
+
+  Note over Browser_A,Sync: ➜ usePublishFocus reads pathname<br/>and calls engine.publishFocus
+
+  Browser_A->>Sync: { type:"focus", focus:{kind:"project", id} }
+  Sync->>Sync: PresenceBroker.setFocus(socket, focus)
+  Sync->>Browser_A: { type:"presence", users:[ Alex@project ] }
+
+  Note over Browser_S: Sam was already connected,<br/>focused on the same project
+
+  Sync->>Browser_S: { type:"presence", users:[ Alex@project, Sam@project ] }
+  Browser_S->>Browser_S: render Alex's avatar on the project row
+
+  Browser_A->>Browser_A: open issue overlay (?issue=ID)
+  Browser_A->>Sync: { type:"focus", focus:{kind:"issue", id} }
+  Sync->>Browser_S: { type:"presence", users:[ Alex@issue, Sam@project ] }
+  Browser_S->>Browser_S: Alex's avatar moves to the issue detail dialog header
+
+  Note over Browser_A,Sync: anonymous upgrade attempt (no cookie)<br/>is refused with HTTP 401 — see ADR-005
+```
+
+The corresponding state-layer change (§0.1):
+`EngineState` gains `presence: PresenceUser[]` and `focus: PresenceFocus`; `presence` is
+written by the `onPresence` channel handler, `focus` is mirrored by `engine.publishFocus`. The
+`PresenceAvatars` component reads `presence` directly and filters by the current entity.
+
 ---
 
 ## 1. Goals (frontend-specific)
@@ -442,25 +486,48 @@ app/layout.tsx (RSC, root)
 
 ## 7. Accessibility plan
 
-Treated as a definition-of-done property, not a phase. Per-component contract:
+Treated as a definition-of-done property, not a phase. Per-component contract,
+with milestone tags:
 
-- **Keyboard**: every action reachable; visible focus ring from tokens; logical
-  tab order; modal focus traps that Escape closes (issue detail in M4c, palette
-  in M4d).
-- **Roving tabindex** on board columns and cards (M5).
-- **Board drag-and-drop**: dnd-kit's keyboard sensor — Space to grab, Arrow to
-  move, Space to drop, Escape to cancel, with `aria-live` announcements
-  ("Grabbed Issue X", "In Progress, position 2", "Dropped"). M5.
-- **Command palette**: WAI-ARIA combobox pattern with `role="combobox"`,
-  `aria-expanded`, `aria-activedescendant`. M4d.
-- **Sync state**: polite live region announcing connection state and per-tab
-  updates ("Issue Y updated by Alex"). The lifecycle of every mutation is
-  perceivable. M4d.
-- **Reduced motion** (`prefers-reduced-motion`) and **forced colors**
-  (`forced-colors`) supported from M4b onward.
-- **Tests**: axe-core asserts zero violations per component; Playwright covers
-  keyboard-only flows; `eslint-plugin-jsx-a11y` in lint. NVDA + VoiceOver pass
-  on each release. M5.
+- ✅ **Keyboard everywhere** (M4c). Every action reachable; visible focus ring
+  from tokens; logical tab order; modal focus traps that Escape closes (issue
+  detail M4c, palette M4d).
+- ✅ **Roving tabindex** on board columns and cards (M5). dnd-kit manages the
+  sortable's tabIndex on the active draggable; the "Open" button inside the
+  card is its own Tab stop so keyboard users can navigate without entering
+  drag mode.
+- ✅ **Board drag-and-drop, keyboard-operable** (M5). dnd-kit's KeyboardSensor —
+  Space to grab, Arrow to move, Space to drop, Escape to cancel. Live-region
+  announcements: "Grabbed *Polish login form*. In Backlog, position 3 of 7…",
+  "*Polish login form*: In progress, position 1 of 4." (per move), "Dropped
+  *Polish login form* in In progress.", "Cancelled. *Polish login form*
+  returned to its original position."
+- ✅ **Command palette** (M4d). WAI-ARIA combobox pattern with `role=combobox`,
+  `aria-expanded`, `aria-controls`, `aria-activedescendant`,
+  `aria-autocomplete=list`; listbox `role=listbox`; options `role=option` +
+  `aria-selected`. Focus stays on the input.
+- ✅ **Sync state** (M4d). srOnly polite live region (`role=status` +
+  `aria-live=polite` + `aria-atomic=true`) that posts a fresh message *only*
+  on a state transition (connecting → online, idle → syncing, syncing →
+  synced(vN), online → offline) rather than every render.
+- ✅ **Reduced motion** + **forced colors** (M5). `globals.css` switches
+  `:focus-visible` to `Highlight` under `forced-colors`; per-component blocks
+  cover the sync badge dot, active project link, toolbar filter chips,
+  palette options, board cards, dialogs, optimistic markers, presence
+  avatars, and close buttons.
+- ✅ **Lint** (M5). `eslint-plugin-jsx-a11y` plugged into next-lint at
+  `plugin:jsx-a11y/recommended`, with stricter overrides on
+  `no-static-element-interactions` and `click-events-have-key-events`. The
+  7 violations the plugin caught at first run are fixed.
+- ✅ **Axe-core in CI** (M5). `palette-a11y.test.tsx` renders the palette's
+  combobox markup with happy-dom + `@vitejs/plugin-react` +
+  `@testing-library/jest-dom` and asserts zero violations across
+  `wcag2a` / `wcag2aa` / `best-practice`; second test asserts
+  `aria-activedescendant` always points at a real option id.
+- ⏳ **Playwright keyboard-only journeys.** Deferred to M7 — needs a CI
+  service container with Mongo for the full sign-up → keyboard flow.
+- ⏳ **Manual NVDA + VoiceOver pass per release.** Documented as the gate
+  before tagging a release.
 
 ## 8. Styling system
 
@@ -487,51 +554,72 @@ The CSS Module rule about local-only selectors means global element styles
 
 ## 9. Performance plan
 
-The brief calls out two performance moments:
-
-- **Activity-preserved view switching** (M4d/M6): use React's `<Activity>`
-  to keep board and list mounted-but-hidden when switching, preserving scroll,
-  filters, selection.
-- **Virtualised list** for projects with thousands of issues (M6). Until then,
-  the in-memory iteration over `view.entities.values()` is fine.
-
-`useEffectEvent` for WS and presence subscriptions so they read the latest
-state without tearing down on unrelated changes — the React 19.2 textbook
-example.
+- **Activity-preserved view switching** ✅ *shipped M6b*. List + Board are both
+  mounted by the project layout and toggled via `<KeepAlive>` (a manual
+  equivalent of React 19.2's experimental `<Activity mode="hidden">` —
+  visibility:hidden + inert + aria-hidden). Switching preserves scroll,
+  filters, focus, in-flight DnD state, and the open detail dialog. Upgrade
+  path to the stable `<Activity>` is a one-line swap in `keep-alive.tsx`
+  when we move to React 19.2.
+- **Virtualised list** ✅ *shipped M6b*. `@tanstack/react-virtual` wraps the
+  list-view rows. 44px estimate, overscan 6, `getItemKey: issue.id`. The
+  board view stays unvirtualised because per-column counts are bounded by
+  the columns themselves.
+- **`useEffectEvent` for WS / presence subscriptions.** Deferred until React
+  19.2 lands stably; the current `useEffect` deps are stable enough that
+  this is a micro-optimisation, not a correctness gate.
 
 ## 10. Open questions / future work
 
-- **Workspace permissions**: M4-as-shipped scopes pull to the entire
-  workspace. Memberships exist as an entity but aren't enforced. Wiring this
-  needs careful protocol thought: the server should pull only what a user's
-  memberships entitle them to.
-- **Multiple workspaces per user**: out of MVP scope; the data model already
-  supports it via the Membership entity.
-- **Issue detail navigation**: stays an overlay (M4c) or a route
-  (`/app/[projectId]/[issueId]`)? Overlay is faster, route is shareable. We
-  pick "overlay that pushes a route" so both work.
-- **Filters as URL state**: M4c stores filter state in local component state.
-  M4d / M6 will lift it into URL query params so shares and back-button work.
-- **Server-side data fetching for the marketing page** (e.g. workspace count
-  for social proof): stays out of scope. The repo is the marketing.
-- **CSP / security headers** at the web container level: the existing Traefik
-  pipeline adds `security-headers@file` which is enough for M4. Tightening
-  the CSP for the client island lands with M5.
-- **Service worker for true offline**: the engine already opens instantly
+- ✅ **WebSocket session gating** *shipped M6a*. The upgrade itself is now
+  auth-gated; anonymous upgrades get `HTTP 401`. See `docs/ARCHITECTURE.md`
+  ADR-005.
+- ✅ **Presence (who's-viewing)** *shipped M6a*. Workspace-scoped, multi-tab
+  dedupe, focus published on every route change. See ADR-006.
+- ✅ **Filters as URL state** *shipped M4c*. `?status=…&label=…&q=…` are the
+  canonical filter representation; component state mirrors them and writes
+  back via `router.replace` (debounced 200ms for the search box).
+- ✅ **Issue detail navigation** *shipped M4c*. Detail is an overlay driven by
+  `?issue=ID` so it stays shareable AND the underlying list/board keeps its
+  scroll. Esc closes by clearing the param.
+- ✅ **`<Activity>`-preserved view switching + virtualisation** *shipped M6b* —
+  see §9.
+- **Workspace permission enforcement on pull.** M6a closes the *transport*
+  side: the socket can't be opened anonymously. The *data* side still trusts
+  the cookie — `applyPush` and `pull` operate on the workspace the session
+  declares. Future M7 work: derive the workspace scope from the session inside
+  the handler and reject any mutation whose entities don't belong to it. This
+  is a defence-in-depth item; the current behaviour matches the brief.
+- **Multiple workspaces per user.** The data model already supports it via the
+  `Membership` entity. UI work needed: a workspace picker, a `currentWorkspaceId`
+  in the session, scoped IDB databases. Out of MVP.
+- **Cursors on the board.** Add a `cursor: {x, y}` field to `PresenceFocus`,
+  throttle publishes, render per-user cursors on the board with the
+  deterministic colour-from-userId already used by the avatar chips. The
+  mechanism is the same as M6a.
+- **CSP / security headers at the web container level.** The existing
+  Traefik pipeline adds `security-headers@file` which is enough for M6.
+  Tightening the CSP for the client island is a future M7 item once the
+  inline scripts from Next are stable.
+- **Service worker for true offline.** The engine already opens instantly
   offline because IDB is the source of truth, but the *shell* (HTML/JS/CSS)
-  still needs a network for the first hit. M6 will add a tiny SW that caches
-  the shell.
+  still needs a network for the first hit. A small SW caching the static
+  shell would close the loop. Deferred (M7+).
+- **Horizontal scale-out of the sync server.** Per ADR-006, presence is
+  in-process. Multi-instance presence needs a Redis pub/sub or NATS in front
+  of the broker. Explicitly out of MVP per the brief.
 
 ## 11. Milestone slot-in
 
-M4 splits into four reviewable PRs:
+The MVP is now complete. PR-per-milestone, all merged onto `main`:
 
-- **M4a (shipped)** — auth, app gate, EngineProvider, "you're in" page.
-- **M4b (open)** — sidebar shell, list view, create issue, status, delete.
-- **M4c (next)** — board view, issue detail panel, comments, labels, filters.
-- **M4d (after)** — command palette, sync-status live region, the M3-era
-  socket badge made perceivable.
-
-M5 adds the accessibility hardening from §7. M6 adds presence,
-`<Activity>`-preserved view switching, virtualisation, the service worker,
-and the front-door README polish.
+- ✅ **M4a** — auth, app gate, EngineProvider, "you're in" page (PR #4).
+- ✅ **M4b** — sidebar shell, list view, create issue, status, delete (PR #5).
+- ✅ **M4c** — board view, issue detail panel, comments, labels, filters (PR #7).
+- ✅ **M4d** — command palette, sync-status live region (PR #8).
+- ✅ **M5** — accessibility hardening: keyboard DnD with announcements,
+  jsx-a11y, forced-colors, axe-core (PR #9).
+- ✅ **M6a** — auth-gated WebSocket + workspace-scoped presence (PR #10).
+- ✅ **M6b** — `<KeepAlive>` view switching + virtualised list (PR #11).
+- ✅ **M6c** — docs polish: ADRs filled, ARCHITECTURE.md and FRONTEND.md
+  refreshed, README finished as the front-door (this PR).

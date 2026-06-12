@@ -157,18 +157,76 @@ async function pull(clientID, cookieVersion) {
 }
 ```
 
-### 3.5 Poke and pull
+### 3.5 Poke, pull, presence
 
-The WebSocket carries one message type from the server: `poke`. On any successful push the server
-notifies the workspace's connected clients. They each issue a pull. We deliberately do **not** send
-the patch over the socket — pulls go over HTTPS so the protocol is debuggable with curl, and so the
-socket can drop without losing data.
+The WebSocket carries three message types from the server: `hello`, `poke`, and `presence`. The
+client may publish one type back: `focus`.
+
+- **`hello`** is sent on connect with the server's current cookie so a freshly-opened socket can
+  decide whether to pull.
+- **`poke`** is sent after any successful push. Connected clients each issue a pull.
+- **`presence`** is sent whenever the workspace presence set changes (a peer joined, left, or
+  changed focus). It carries the full deduplicated workspace snapshot — each user appears once with
+  the focus from their most-recently-updated tab.
+- **`focus`** is the client's way of saying "this is what I'm currently looking at". The server
+  updates that socket's presence entry and re-broadcasts.
+
+We deliberately do **not** send entity patches over the socket. Pulls go over HTTPS so the protocol
+is debuggable with `curl`, and so the socket can drop without losing data. The socket is the *signal
+plane*; the HTTPS endpoint is the *data plane*. Separating them keeps both small.
+
+The upgrade itself is auth-gated against the session cookie — see §3.8. Anonymous connections are
+refused with `HTTP 401`. Each authenticated socket carries `(userId, workspaceId)` for the lifetime
+of the connection; the broker uses these to scope presence fan-out per workspace.
 
 ### 3.6 Offline and resume
 
 The outbox and `serverBase` both live in IndexedDB. Cold starts read both from disk and recompute
 the view before the network is consulted. The socket reconnects with backoff, the client pulls,
-flushes the outbox, and is back to live.
+flushes the outbox, and is back to live. On reconnect the client also re-publishes its last `focus`
+so the server's presence snapshot stays current after a dropped socket.
+
+### 3.7 Presence
+
+The presence broker is intentionally a thin layer over the WS registry:
+
+```
+PresenceBroker
+  entries: Map<WebSocket, { session, email, focus, updatedAt }>
+  add(socket, session, email)        // joins, fans out workspace snapshot
+  remove(socket)                     // leaves, fans out workspace snapshot
+  setFocus(socket, focus)            // idempotent on no-op transitions
+  pokeAll(except?)                   // M3-era contract preserved
+```
+
+Two design choices worth calling out:
+
+1. **In-process state.** Presence lives in the sync server's memory only. A restart drops every
+   peer, which the client's reconnect + republish loop covers within a tick. Persisting presence to
+   Mongo would let it survive a restart but cost a write per focus change, which buys nothing real.
+2. **Most-recent-wins dedupe by `userId`.** A user with multiple tabs appears once in the snapshot,
+   with the focus from whichever tab updated last. The alternative — one entry per tab — gives a
+   noisier list with no useful information (no-one cares which tab the user is on, only what they're
+   looking at).
+
+The brief's "cursors on the board" item from §6 (Phase 2) is a future extension: add a `cursor`
+field to `PresenceFocus`, throttle publishes, render on the board with a per-user colour. The
+mechanism is the same.
+
+### 3.8 Authentication on the WebSocket upgrade
+
+Cookie sessions for HTTPS endpoints are unsurprising. The WebSocket needs the same gate:
+
+- The browser sends the `slipstream_session` cookie with the upgrade request because the WS is on
+  the same origin.
+- The server parses the cookie, validates the session against the `sessions` collection, and looks
+  up the email on the `accounts` collection. Either lookup failing means the upgrade is refused
+  with `HTTP 401 Unauthorized` written directly to the raw socket before destruction.
+- A successful auth captures `(session, email)` and passes them into `PresenceBroker.add(...)` so
+  fan-out can be workspace-scoped without re-querying Mongo on every message.
+
+This means the socket can no longer be opened by an anonymous probe — a useful invariant for the
+M6a presence design, and a cheap defence against random load.
 
 ## 4. Why server-ordered mutators, not CRDTs
 
@@ -245,18 +303,170 @@ public repo because forks could run arbitrary code on them.
 If the homelab box goes dark, a drop-in swap is "always-on small host + free MongoDB Atlas tier";
 the build is unchanged.
 
-## 9. ADRs (placeholders, filled per milestone)
+## 9. ADRs
 
-- **ADR-001 — Server-ordered mutators over CRDTs.** Discrete-field tracker data; total order is
-  cheap; CRDT cost not earned. (Stub — fill in M1.)
-- **ADR-002 — `entities` as one collection, not many.** One pull query becomes `version > cookie`;
-  composite indexes serve the board/list reads. (Stub — fill in M1.)
-- **ADR-003 — Pull is HTTPS, the socket carries only `poke`.** Debuggability and resilience over
-  marginal latency. (Stub — fill in M3.)
-- **ADR-004 — Domain on `hiten-patel.co.uk`, not `hiten.dev`.** Existing Cloudflare DNS challenge,
-  wildcard A record already in place; no infra duplication for portfolio value. (Filled.)
+Each ADR follows the same shape: **context**, **decision**, **consequences**, **alternatives
+considered**. They're short on purpose — the prose above describes how things work; the ADRs
+describe **why** they were chosen.
+
+### ADR-001 — Server-ordered mutators over CRDTs
+
+**Context.** Slipstream needs to converge across multiple offline clients with no permanent
+divergence. The textbook answer for arbitrary collaborative state is a CRDT. The textbook answer is
+not free.
+
+**Decision.** Use a server-authoritative mutation log with shared deterministic mutators, and let
+the server's transactional `$inc` of a global counter define total order. Conflicts resolve as
+last-write-in-server-order-wins at mutation granularity.
+
+**Consequences.**
+- Trivial to reason about: every entity has exactly one `version`; replay a list of mutations
+  against the same `serverBase` and you get the same result.
+- No CRDT metadata in the documents — a Mongo `find()` returns plain entities a human can read in
+  the shell.
+- Deterministic convergence is provable by property test, which we do in
+  `packages/client/src/engine.test.ts` ("three clients with random interleavings converge").
+- "Two people moved the same issue to different columns" resolves as the *latest* mutation's
+  effect; the loser sees the winner's value on the next pull. For discrete fields (`status`,
+  `assigneeId`, `position`) this is the correct semantics. For free-form text it would not be — see
+  ADR-001-future-extension below.
+
+**Alternatives considered.**
+- **Per-document CRDT (Automerge, Yjs).** Strictly more general but adds metadata to every
+  document, complicates the Mongo storage story, and forces every operation through the CRDT layer
+  even when discrete-field semantics would do.
+- **Operational transform.** Older, narrower, even more bespoke than CRDTs. Worth the cost only for
+  rich-text editing, which we're explicitly out of scope.
+
+**Future extension.** A `description` field on `Issue` is the obvious candidate for collaborative
+rich text. The path: introduce a per-field CRDT (Yjs document stored on the entity), keep
+everything else under the server-ordered mutator rule. The discrete fields don't care; the
+rich-text field gets the merge it needs.
+
+### ADR-002 — `entities` as one collection, not many
+
+**Context.** Mongo modelling for a tracker can go several ways: one collection per entity kind
+(workspaces, projects, issues, …), one collection with a `kind` discriminator, or hybrid.
+
+**Decision.** A single `entities` collection keyed by the entity's `_id` (the uuidv7 the client
+minted), with a `kind` discriminator and a flat field set per kind.
+
+**Consequences.**
+- The pull becomes one query: `entities.find({ workspaceId: { $in: ws }, version: { $gt: cookie } })`.
+  No `$lookup`, no fanning out across collections. The composite index
+  `{ workspaceId: 1, version: 1 }` makes this an index scan over a small range.
+- Adding a new entity kind is a Zod schema change in `packages/protocol` and a new mutator. No
+  Mongo migration, no new collection to create or index.
+- The Zod discriminated union (`EntitySchema`) means the type system reflects exactly the same
+  shape as the Mongo document; no manual mapping.
+- Cross-kind queries (e.g., "every entity under this project") are cheap because they're still in
+  one collection.
+
+**Alternatives considered.**
+- **One collection per kind.** Idiomatic Mongo, but the pull becomes one query per kind, and the
+  per-kind cookies would have to be reconciled. Lots of moving parts for no obvious win.
+- **Embedded child entities.** Comments embedded in issues, issues embedded in projects. Pretty,
+  but every mutation to a child rewrites the parent document, and the document-size ceiling is
+  16MB. Bad path for anything but the smallest workspaces.
+
+### ADR-003 — Pull is HTTPS; the socket carries only signals
+
+**Context.** A WebSocket can carry data. It's tempting to put the patch on the socket and skip the
+extra pull round-trip.
+
+**Decision.** The socket carries `hello` / `poke` / `presence` and nothing else. Patches always
+travel over `POST /api/pull` on HTTPS.
+
+**Consequences.**
+- The protocol is debuggable with `curl`. You can paste a session cookie into a one-liner and
+  inspect exactly what a pull returns.
+- A dropped socket loses zero data — the client reconnects, the server says "you might be behind",
+  the client pulls. There's no "catch up the connection" code path.
+- The socket is small enough to be obviously correct. Adding presence in M6a was 100 lines of
+  server code because the broker is just a registry plus a fan-out.
+- Latency cost: an extra round-trip per change. In practice the pull happens in single-digit
+  milliseconds against the homelab box, and the engine renders the optimistic state before either
+  trip completes, so the user-perceived latency is zero.
+
+**Alternatives considered.**
+- **Patches on the socket.** Lower theoretical latency, much more code: framing, retransmission
+  when a pull replaces the socket as the recovery path, ordering against the cookie. Saves a
+  round-trip we don't notice.
+- **Long-polling / SSE.** Server-Sent Events would let us drop the bidirectional half but still
+  need a sidecar for `focus` messages. The WS is one connection that does the whole job.
+
+### ADR-004 — Domain on `hiten.dev`, served by Traefik on the homelab
+
+**Context.** The brief specified `tracker.hiten.dev`. The user owns both `hiten.dev` and
+`hiten-patel.co.uk`. Cloudflare DNS-01 is already wired on this box for the
+`hiten-patel.co.uk` zone; `hiten.dev` resolves to a different box entirely.
+
+**Decision.** Use `tracker.hiten.dev` (the brief's domain) with a new Cloudflare A record pointing
+at this box's IP. The same Traefik resolver issues a fresh Let's Encrypt cert via DNS-01 — works
+because the same Cloudflare token has access to both zones.
+
+**Consequences.**
+- Live demo URL matches the brief, no surprises on a portfolio link.
+- One new A record, zero new infrastructure. The DNS challenge already covers the multi-zone case.
+- Future-proof: pointing the record at a different IP swaps the demo host without any cert
+  reissue work.
+
+**Alternatives considered.**
+- **`tracker.hiten-patel.co.uk` (the original detour).** No new DNS record needed because a
+  wildcard A already resolved. Rejected at the user's request to stay faithful to the brief.
+- **Run a parallel stack on the existing `hiten.dev` host.** Two infrastructures for the same
+  service; rejected as gratuitous duplication.
+
+### ADR-005 — WebSocket upgrades are auth-gated against the session cookie
+
+**Context.** M0–M5 accepted any WebSocket upgrade on `/api/sync`. Adding presence (M6a) needs each
+socket to know which user it belongs to so fan-out can be workspace-scoped without a per-message
+lookup.
+
+**Decision.** Authenticate the upgrade itself. The server reads the `slipstream_session` cookie
+from the upgrade request, validates against the `sessions` collection, fetches the email from
+`accounts`, and only then calls `wss.handleUpgrade(...)`. Anonymous upgrades get
+`HTTP 401 Unauthorized` written directly to the raw socket before destruction.
+
+**Consequences.**
+- The socket's `(userId, workspaceId)` is stable for its whole lifetime. The broker stores them
+  once at `add()` and doesn't touch Mongo again until presence-fan-out time (which only reads its
+  own in-memory map).
+- Cheap, durable invariant: there is no such thing as an unauthenticated `/api/sync` socket.
+- A side-benefit defence: random WebSocket probes from the internet are rejected at handshake.
+
+**Alternatives considered.**
+- **Token-on-first-message.** Open anonymous, send a `{type:"auth", token}` first frame. Adds an
+  ordering edge case (what if the client opens a focus message before the auth?) and means every
+  message handler has to know whether the socket is authed.
+- **Subprotocol with bearer in the WS protocol header.** Works but requires the client to grab the
+  token at boot. Cookie reuse is simpler and matches the HTTPS endpoints.
+
+### ADR-006 — Presence is an in-process broker, workspace-scoped, multi-tab dedupe
+
+**Context.** "Who's looking at this issue?" needs to be cheap to compute, cheap to fan out, and
+robust against a user with multiple tabs.
+
+**Decision.** Keep presence in the sync server's memory only (`PresenceBroker.entries`). Fan out
+on `add` / `remove` / `setFocus`. Dedupe by `userId` with most-recent-wins on `updatedAt`, so a
+user with multiple tabs appears once with the focus from the most-recently-active tab.
+
+**Consequences.**
+- Zero database load for presence. Joining a workspace with N peers costs one in-memory iteration
+  per fan-out, well under a millisecond even for hundreds of connections.
+- A server restart drops every entry. Clients reconnect within their backoff window and re-publish
+  their last `focus`, so the presence snapshot is rebuilt in tens of milliseconds.
+- The single-process assumption is a real limit: scaling to multiple sync nodes would need a Redis
+  pub/sub or NATS in front of the broker. That's documented as out of MVP scope and called out in
+  the FRONTEND.md open questions.
+
+**Alternatives considered.**
+- **Persist presence to Mongo.** Survives a restart, but a write per focus change for no real
+  benefit — the in-process state is already faster to rebuild than to query.
+- **One entry per tab (no dedupe).** Easier to implement; gives the user a noisy "Alex (tab),
+  Alex (tab), Alex (tab)" list with no useful information.
 
 ---
 
-*This document is intentionally checked in alongside the code and updated per milestone. If you are
-reading the repo and want to know how a piece works, this is the place to start.*
+*This document is intentionally checked in alongside the code and updated per milestone. If you
+are reading the repo and want to know how a piece works, this is the place to start.*
