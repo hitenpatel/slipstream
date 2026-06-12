@@ -7,10 +7,13 @@ import type { Project } from "@slipstream/protocol";
 import { uuidv7 } from "@slipstream/protocol";
 import { useEngine, useEngineState } from "./engine-provider";
 import { CommandPalette } from "./palette/command-palette";
+import { PresenceAvatars } from "./presence-avatars";
 import { SyncAnnouncer } from "./sync-announcer";
+import { usePublishFocus } from "./use-publish-focus";
 import styles from "./app-shell.module.css";
 
 export function AppShell({ children }: { children: ReactNode }): React.JSX.Element {
+  usePublishFocus();
   const { engine, me } = useEngine();
   const view = useEngineState((s) => s.view);
   const online = useEngineState((s) => s.online);
@@ -133,6 +136,7 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
                     >
                       <span className={styles.projectKey}>{p.key}</span>
                       <span className={styles.projectName}>{p.name}</span>
+                      <PresenceAvatars focus={{ kind: "project", id: p.id }} max={3} />
                     </Link>
                   </li>
                 );

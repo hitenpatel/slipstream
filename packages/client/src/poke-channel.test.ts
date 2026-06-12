@@ -31,6 +31,8 @@ describe("ManualPokeChannel", () => {
 class FakeWS {
   static instances: FakeWS[] = [];
   url: string;
+  readyState = 0; // CONNECTING
+  sent: string[] = [];
   onopen: ((ev?: unknown) => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   onclose: ((ev?: unknown) => void) | null = null;
@@ -42,7 +44,11 @@ class FakeWS {
     FakeWS.instances.push(this);
   }
 
+  send(payload: string) {
+    this.sent.push(payload);
+  }
   emitOpen() {
+    this.readyState = 1; // OPEN
     this.onopen?.();
   }
   emitMessage(payload: unknown) {
@@ -50,10 +56,12 @@ class FakeWS {
   }
   emitClose() {
     this.closed = true;
+    this.readyState = 3; // CLOSED
     this.onclose?.();
   }
   close() {
     this.closed = true;
+    this.readyState = 3;
   }
 }
 
@@ -181,5 +189,72 @@ describe("WebSocketPokeChannel", () => {
     ch.close();
     FakeWS.instances[0]!.emitClose();
     expect(scheduled.length).toBe(0); // no reconnect scheduled
+  });
+
+  it("fires onPresence when the server sends a presence frame", () => {
+    const received: Array<{ userId: string; email: string }[]> = [];
+    const ch = new WebSocketPokeChannel({
+      url: "ws://x",
+      WebSocketCtor: FakeWS as unknown as typeof WebSocket,
+    });
+    ch.onPresence((users) =>
+      received.push(users.map((u) => ({ userId: u.userId, email: u.email }))),
+    );
+    const ws = FakeWS.instances[0]!;
+    ws.emitOpen();
+    ws.emitMessage({
+      type: "presence",
+      users: [{ userId: "u1", email: "a@x", focus: null, updatedAt: 1 }],
+    });
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual([{ userId: "u1", email: "a@x" }]);
+    ws.emitMessage({ type: "presence", users: [] });
+    expect(received).toHaveLength(2);
+    ws.emitMessage({ type: "poke" }); // not a presence
+    expect(received).toHaveLength(2);
+    ch.close();
+  });
+
+  it("publishFocus serialises the focus message and sends it on the wire", () => {
+    const ch = new WebSocketPokeChannel({
+      url: "ws://x",
+      WebSocketCtor: FakeWS as unknown as typeof WebSocket,
+    });
+    const ws = FakeWS.instances[0]!;
+    ws.emitOpen();
+    ch.publishFocus({ kind: "issue", id: "abc" });
+    expect(ws.sent).toContainEqual(
+      JSON.stringify({ type: "focus", focus: { kind: "issue", id: "abc" } }),
+    );
+    ch.publishFocus(null);
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "focus", focus: null }));
+    ch.close();
+  });
+
+  it("re-publishes the last focus after a reconnect", () => {
+    const scheduled: Array<{ cb: () => void; ms: number }> = [];
+    const ch = new WebSocketPokeChannel({
+      url: "ws://x",
+      WebSocketCtor: FakeWS as unknown as typeof WebSocket,
+      schedule: (cb, ms) => {
+        const e = { cb, ms };
+        scheduled.push(e);
+        return e;
+      },
+      cancel: () => {},
+      minBackoffMs: 100,
+    });
+    const first = FakeWS.instances[0]!;
+    first.emitOpen();
+    ch.publishFocus({ kind: "project", id: "proj-1" });
+    expect(first.sent.length).toBe(1);
+
+    first.emitClose();
+    scheduled[0]!.cb();
+    const second = FakeWS.instances[1]!;
+    second.emitOpen();
+    expect(second.sent.length).toBe(1);
+    expect(second.sent[0]).toContain("proj-1");
+    ch.close();
   });
 });

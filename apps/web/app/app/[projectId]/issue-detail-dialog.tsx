@@ -10,6 +10,7 @@ import {
   type IssuePriority,
 } from "@slipstream/protocol";
 import { useEngine } from "../engine-provider";
+import { PresenceAvatars } from "../presence-avatars";
 import { PRIORITY_LABEL, STATUS_LABEL } from "./filters";
 import { LabelChips } from "./label-chips";
 import { useProjectData } from "./hooks";
@@ -187,6 +188,7 @@ function DetailBody({
           }}
           aria-label="Issue title"
         />
+        <PresenceAvatars focus={{ kind: "issue", id: issue.id }} max={4} />
         <button type="button" onClick={onClose} className={styles.close} aria-label="Close">
           ×
         </button>

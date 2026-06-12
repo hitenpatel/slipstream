@@ -1,6 +1,6 @@
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { connect, type SlipstreamDb } from "./db.js";
-import { PokeBroker } from "./poke.js";
+import { PresenceBroker } from "./presence.js";
 
 /**
  * Start an in-memory single-node replica set. Mongo transactions need a
@@ -9,7 +9,7 @@ import { PokeBroker } from "./poke.js";
  */
 export async function startMemoryDb(): Promise<{
   db: SlipstreamDb;
-  broker: PokeBroker;
+  broker: PresenceBroker;
   stop: () => Promise<void>;
 }> {
   const replset = await MongoMemoryReplSet.create({
@@ -18,7 +18,7 @@ export async function startMemoryDb(): Promise<{
   const uri = replset.getUri();
   const db = await connect(uri, "slipstream-test");
   await db.ensureIndexes();
-  const broker = new PokeBroker();
+  const broker = new PresenceBroker();
   return {
     db,
     broker,
