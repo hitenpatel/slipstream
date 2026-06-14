@@ -179,6 +179,10 @@ The upgrade itself is auth-gated against the session cookie — see §3.8. Anony
 refused with `HTTP 401`. Each authenticated socket carries `(userId, workspaceId)` for the lifetime
 of the connection; the broker uses these to scope presence fan-out per workspace.
 
+When `REDIS_URL` is set, the broker uses Redis pub/sub so multiple sync instances behind a load
+balancer share workspace presence and pokes. The protocol is unchanged either way — clients can't
+tell which broker their server is using.
+
 ### 3.6 Offline and resume
 
 The outbox and `serverBase` both live in IndexedDB. Cold starts read both from disk and recompute
@@ -201,9 +205,12 @@ PresenceBroker
 
 Two design choices worth calling out:
 
-1. **In-process state.** Presence lives in the sync server's memory only. A restart drops every
-   peer, which the client's reconnect + republish loop covers within a tick. Persisting presence to
-   Mongo would let it survive a restart but cost a write per focus change, which buys nothing real.
+1. **Pluggable state, in-process default.** `PresenceBroker` is an interface. The default
+   implementation (`InProcessPresenceBroker`) keeps state in the sync server's memory; a restart
+   drops every peer, which the client's reconnect + republish loop covers within a tick.
+   `RedisPresenceBroker` (M7d) stores entries in a workspace-scoped Redis hash and fans changes /
+   pokes out over Redis pub/sub so multiple sync instances behind a load balancer share the same
+   workspace map. The boot script chooses based on `REDIS_URL`. See ADR-006.
 2. **Most-recent-wins dedupe by `userId`.** A user with multiple tabs appears once in the snapshot,
    with the focus from whichever tab updated last. The alternative — one entry per tab — gives a
    noisier list with no useful information (no-one cares which tab the user is on, only what they're
@@ -212,6 +219,24 @@ Two design choices worth calling out:
 The brief's "cursors on the board" item from §6 (Phase 2) is a future extension: add a `cursor`
 field to `PresenceFocus`, throttle publishes, render on the board with a per-user colour. The
 mechanism is the same.
+
+### 3.7.1 Per-field CRDT for `Issue.description` (M7c)
+
+ADR-001 promised "build an engine AND know where CRDTs earn their cost". M7c delivers it: the
+`description` field on `Issue` is a per-field CRDT backed by Yjs, every other field stays under
+the server-ordered mutator rule. See ADR-008 for the full design rationale; the mechanics are:
+
+- The entity's `description: string` field stores a base64-encoded Y.Doc state. Old issues with
+  plain text descriptions decode transparently via a backwards-compat helper.
+- A new `editIssueDescription(id, updateB64)` mutator decodes the existing description, applies
+  the binary Yjs update, re-encodes, and writes the entity through the normal `Tx` interface.
+- Because Y.Doc CRDTs are commutative, the server's transactional sequencing doesn't change the
+  final merged state — two concurrent edits arrive identical regardless of which lands first
+  inside `withTransaction`.
+- The optimistic UI path is unchanged. The detail dialog's textarea binding diffs against a
+  pre-snapshot state vector, applies a minimal `delete + insert` on the Y.Text, and sends the
+  binary update through `engine.mutate("editIssueDescription", ...)`. Local edits show
+  immediately; remote edits arrive on the next pull and merge.
 
 ### 3.8 Authentication on the WebSocket upgrade
 
@@ -227,6 +252,22 @@ Cookie sessions for HTTPS endpoints are unsurprising. The WebSocket needs the sa
 
 This means the socket can no longer be opened by an anonymous probe — a useful invariant for the
 M6a presence design, and a cheap defence against random load.
+
+### 3.9 Workspace scoping on `/api/push` and `/api/pull` (M7b)
+
+The same session-cookie gate now runs on the HTTPS endpoints. Both `/api/pull` and `/api/push`
+read the cookie, validate the session, and:
+
+- **Pull**: filters the entities query by the session's `workspaceId`. Without this, the M7b
+  invite flow (which lets users share workspaces) would let any signed-in user read any
+  workspace's data by passing a different `workspaceId` in the request.
+- **Push**: rejects any mutation whose `args.workspaceId` doesn't match the session's
+  `workspaceId` with `HTTP 403`. Mutations that only touch existing entities (e.g.,
+  `updateIssueStatus`) are implicitly scoped — the entity could only have been pulled by a member
+  of the workspace.
+
+Workspace invites are the unlocker for the multi-user-per-workspace story. See ADR-007 for the
+invite design and security boundary.
 
 ## 4. Why server-ordered mutators, not CRDTs
 
@@ -442,29 +483,131 @@ from the upgrade request, validates against the `sessions` collection, fetches t
 - **Subprotocol with bearer in the WS protocol header.** Works but requires the client to grab the
   token at boot. Cookie reuse is simpler and matches the HTTPS endpoints.
 
-### ADR-006 — Presence is an in-process broker, workspace-scoped, multi-tab dedupe
+### ADR-006 — Presence broker is workspace-scoped, multi-tab-deduped, and pluggable
 
 **Context.** "Who's looking at this issue?" needs to be cheap to compute, cheap to fan out, and
-robust against a user with multiple tabs.
+robust against a user with multiple tabs. The single-process assumption is fine for a homelab box
+but breaks the moment a second sync instance comes online.
 
-**Decision.** Keep presence in the sync server's memory only (`PresenceBroker.entries`). Fan out
-on `add` / `remove` / `setFocus`. Dedupe by `userId` with most-recent-wins on `updatedAt`, so a
-user with multiple tabs appears once with the focus from the most-recently-active tab.
+**Decision.** Define `PresenceBroker` as an interface. Ship two implementations and let the boot
+script choose based on the `REDIS_URL` env var.
+
+- **`InProcessPresenceBroker`** (M3-era default): every entry is a Map row keyed by the WebSocket.
+  Fan-out is a `for` loop. Used when `REDIS_URL` is absent.
+- **`RedisPresenceBroker`** (M7d): per-socket entries live in a workspace-scoped Redis hash
+  `presence:<workspaceId>`, keyed by `<instanceId>:<socketId>` so two instances never collide.
+  Changes are notified over `presence:<workspaceId>:changed` pub/sub; pokes are notified over
+  `poke:<workspaceId>`. Subscribed channels are reference-counted per workspace and unsubscribed
+  lazily when the last local socket in that workspace closes.
+
+Both implementations dedupe presence by `userId` with most-recent-wins on `updatedAt`, so a user
+with multiple tabs appears once with the focus from the most-recently-active tab.
 
 **Consequences.**
-- Zero database load for presence. Joining a workspace with N peers costs one in-memory iteration
-  per fan-out, well under a millisecond even for hundreds of connections.
-- A server restart drops every entry. Clients reconnect within their backoff window and re-publish
-  their last `focus`, so the presence snapshot is rebuilt in tens of milliseconds.
-- The single-process assumption is a real limit: scaling to multiple sync nodes would need a Redis
-  pub/sub or NATS in front of the broker. That's documented as out of MVP scope and called out in
-  the FRONTEND.md open questions.
+
+- Zero database load for presence in either mode — the Redis hash is a Redis hash, not a Mongo
+  collection. The whole snapshot is one `HGETALL`, sub-millisecond for hundreds of connections.
+- A server restart drops every entry it owned. Clients reconnect within their backoff window and
+  re-publish their last `focus`, so the presence snapshot is rebuilt in tens of milliseconds. The
+  Redis-backed path has the same property — orphaned hash entries from a crashed instance are
+  vacuumed on the next change to that workspace.
+- Horizontal scale-out is opt-in and cheap: add a Redis container, set `REDIS_URL` in the sync's
+  environment, ship another sync replica. No protocol change.
+- The single-Redis assumption is now the load-bearing limit — a future ADR could replace it with a
+  Redis Cluster or NATS, but for tracker-scale workloads one Redis is several orders of magnitude
+  away from saturation.
 
 **Alternatives considered.**
-- **Persist presence to Mongo.** Survives a restart, but a write per focus change for no real
-  benefit — the in-process state is already faster to rebuild than to query.
-- **One entry per tab (no dedupe).** Easier to implement; gives the user a noisy "Alex (tab),
-  Alex (tab), Alex (tab)" list with no useful information.
+
+- **Persist presence to Mongo.** Survives a restart cleanly, but a write per focus change for no
+  real benefit — the rebuild-after-restart pattern is already correct, and a Mongo write on every
+  cursor move is a real cost. Rejected even for the Redis-backed path.
+- **Sharded process** (each instance owns a deterministic slice of workspaces). Avoids Redis but
+  requires a smarter load balancer (consistent hashing of the WS upgrade), and the failure mode is
+  "a slice goes dark" rather than "presence rebuilds in tens of ms". Rejected as too operationally
+  fragile for the demonstrated scale.
+- **One entry per tab (no dedupe).** Easier to implement; gives the user a noisy "Alex (tab), Alex
+  (tab), Alex (tab)" list with no useful information.
+
+### ADR-007 — Workspace invite is signup-only, single-use, 7-day TTL
+
+**Context.** The brief's "one workspace per user" stance fit M4 but made shared workspaces
+impossible. Adding invites means deciding how the redemption works and where the security boundary
+sits.
+
+**Decision.** A workspace member mints an invite via `POST /api/auth/invite`. The response carries
+a 256-bit random token plus an expiry (7 days). The client composes the public URL
+`/join/<token>`. The token works *only* during `/api/auth/signup`: pass it in the body, signup
+skips the workspace bootstrap, the new account's session lands on the inviter's `workspaceId`.
+
+Existing signed-in users **cannot** redeem an invite from their own session — they have to sign
+out and create a fresh account. The brief's full membership matrix (one user in many workspaces,
+with a picker) is documented as future M8 work.
+
+**Consequences.**
+
+- The token is the entire credential. Single-use (validated before the account row is even
+  written; orphaned-on-failure is impossible because the invite check sequences before the
+  Argon2 hash + `accounts.insertOne`). 7-day TTL is enforced by a Mongo TTL index on
+  `invites.expiresAt`.
+- The signup → join path is the only redemption code path. No "convert existing user to a member"
+  path means no awkward "should we wipe their old workspace?" question.
+- Defence in depth: M7b also made `/api/pull` and `/api/push` cookie-session-gated and
+  workspace-scoped (sees ADR-003 update). Without that, an invite-joined user could still read
+  any workspace by passing a different `workspaceId` in the request — the route handlers now
+  derive the workspaceId from the session, not the body.
+
+**Alternatives considered.**
+
+- **Token-on-first-message-redeem from an existing session.** Switches the user's active
+  workspace; requires a workspace picker for the case where the user wants to switch back. Too
+  much UI for the M7b scope.
+- **Email-based invite (server sends the link).** Better UX but adds an SMTP / Resend dependency
+  and the "verify email" + "magic link" features end up doing the same job. Deferred until the
+  magic-link auth lands (M8 candidate).
+- **JWT-encoded invite (no DB row).** Stateless and trendy, but no revoke story and a longer
+  token. Single-use revoke is the whole point.
+
+### ADR-008 — Per-field CRDT for rich-text uses Yjs in-line within the existing mutator
+
+**Context.** ADR-001 promised that fields where CRDTs *do* earn their cost (rich-text description)
+would get them as a future extension. The question for M7c is how to add CRDT semantics to one
+field without disturbing the rest of the engine.
+
+**Decision.** Use **Yjs** as a per-field CRDT. The Y.Doc state lives inside the entity's existing
+`description: string` field, encoded as base64. A new `editIssueDescription(id, updateB64)`
+mutator decodes the existing description, applies the binary update, re-encodes, and writes the
+entity through the normal `Tx` interface — so the optimistic-then-confirmed engine path works
+unchanged.
+
+**Consequences.**
+
+- The entity shape doesn't change. The string field stays a string field; old issues with plain
+  text descriptions decode transparently via `decodeDocOrFromText` (no migration step).
+- The mutator runs identically on both sides (the existing "same code, two execution sites"
+  invariant from ADR-001 is preserved). The server's transactional sequencing of mutations
+  doesn't change the final merged state — Y.Doc CRDTs are commutative, so applying updates in any
+  order yields identical state.
+- The optimistic UI path is unchanged: input → diff against pre-snapshot state vector → mutator
+  through the engine → push transaction → poke → pull → applyPatch → recomputeView. The merge
+  semantics that distinguish this field from "last write wins" live entirely inside the mutator's
+  apply step.
+- Every other field stays under server-ordered mutators (last-write-in-server-order-wins). Status,
+  priority, assignee, position — discrete fields where CRDT overhead would buy nothing and the
+  total-order story is correct.
+
+**Alternatives considered.**
+
+- **Sidecar approach** (description updates flow through a separate `/api/yjs/<docId>` WebSocket
+  relay, not through push/pull). Cleaner separation but two protocols, two transaction stories,
+  two recovery paths. Rejected for the engine-coherence story.
+- **Full-CRDT for every field**. Strictly more general; far more bundle weight on the client
+  (~50 KiB minified for Yjs) and metadata-per-document overhead. For discrete fields the
+  total-order story is correct; CRDT is overkill.
+- **Automerge instead of Yjs**. Comparable semantics; Yjs's binary updates are smaller and the
+  textarea binding ergonomics are better. Both would work.
+- **Hand-rolled OT for description**. Operational transform is older, narrower, and even more
+  bespoke; not worth maintaining for one field. CRDTs are the modern answer.
 
 ---
 
