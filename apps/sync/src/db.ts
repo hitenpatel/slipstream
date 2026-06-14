@@ -20,6 +20,21 @@ export type SessionDoc = {
   expiresAt: number;
 };
 
+/**
+ * Workspace invite. The token is the document id and is used in the
+ * /join/<token> URL. `usedBy` flips to the joining userId on claim;
+ * single-use tokens once consumed cannot be redeemed again.
+ */
+export type InviteDoc = {
+  _id: string; // random opaque token
+  workspaceId: string;
+  invitedBy: string; // userId of the creator (whose email shows on the join page)
+  createdAt: number;
+  expiresAt: number;
+  usedBy?: string;
+  usedAt?: number;
+};
+
 export interface SlipstreamDb {
   client: MongoClient;
   db: Db;
@@ -28,6 +43,7 @@ export interface SlipstreamDb {
   counters: Collection<CounterDoc>;
   accounts: Collection<AccountDoc>;
   sessions: Collection<SessionDoc>;
+  invites: Collection<InviteDoc>;
   close(): Promise<void>;
   ensureIndexes(): Promise<void>;
 }
@@ -44,6 +60,7 @@ export async function connect(uri: string, dbName = "slipstream"): Promise<Slips
   const counters = db.collection<CounterDoc>("counters");
   const accounts = db.collection<AccountDoc>("accounts");
   const sessions = db.collection<SessionDoc>("sessions");
+  const invites = db.collection<InviteDoc>("invites");
 
   const out: SlipstreamDb = {
     client,
@@ -53,6 +70,7 @@ export async function connect(uri: string, dbName = "slipstream"): Promise<Slips
     counters,
     accounts,
     sessions,
+    invites,
     async close() {
       await client.close();
     },
@@ -62,6 +80,9 @@ export async function connect(uri: string, dbName = "slipstream"): Promise<Slips
       await accounts.createIndex({ email: 1 }, { unique: true });
       // expire sessions automatically when expiresAt passes
       await sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      // expire invites the same way
+      await invites.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await invites.createIndex({ workspaceId: 1 });
     },
   };
 

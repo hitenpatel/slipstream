@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../login/page.module.css";
 
-export function SignupForm(): React.JSX.Element {
+export function SignupForm({ inviteToken }: { inviteToken: string | null }): React.JSX.Element {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,12 +21,23 @@ export function SignupForm(): React.JSX.Element {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password, displayName }),
+        body: JSON.stringify({
+          email,
+          password,
+          displayName,
+          ...(inviteToken ? { inviteToken } : {}),
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         if (body.error === "email_taken") {
           setError("An account with that email already exists.");
+        } else if (body.error === "invite_expired") {
+          setError("This invite link has expired. Ask for a new one.");
+        } else if (body.error === "invite_already_used") {
+          setError("This invite has already been used. Ask for a new one.");
+        } else if (body.error === "invite_not_found") {
+          setError("That invite link isn't valid.");
         } else if (res.status === 400) {
           setError("Check your email and password (at least 8 characters).");
         } else {

@@ -152,7 +152,7 @@ describe("pull handler", () => {
       mutations: [mut(clientID, 1, "createWorkspace", { id: wsId, name: "Acme" })],
     });
 
-    const out = await pull(db, { clientID, cookie: beforeCookie });
+    const out = await pull(db, { clientID, cookie: beforeCookie }, { workspaceId: wsId });
     expect(out.lastMutationID).toBe(1);
     expect(out.cookie).toBeGreaterThan(beforeCookie);
     const sawWorkspace = out.patch.some(
@@ -165,7 +165,7 @@ describe("pull handler", () => {
     const clientID = uuidv7();
     const head = await db.counters.findOne({ _id: "global" });
     const cookie = head?.seq ?? 0;
-    const out = await pull(db, { clientID, cookie });
+    const out = await pull(db, { clientID, cookie }, { workspaceId: uuidv7() });
     expect(out.patch).toEqual([]);
     expect(out.cookie).toBe(cookie);
   });
@@ -195,7 +195,7 @@ describe("pull handler", () => {
       mutations: [mut(clientID, 4, "deleteIssue", { id: issueId })],
     });
 
-    const out = await pull(db, { clientID, cookie: headBeforeDelete });
+    const out = await pull(db, { clientID, cookie: headBeforeDelete }, { workspaceId: wsId });
     const sawDel = out.patch.some((op) => op.op === "del" && op.id === issueId);
     expect(sawDel).toBe(true);
   });

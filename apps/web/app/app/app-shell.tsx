@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Project } from "@slipstream/protocol";
 import { uuidv7 } from "@slipstream/protocol";
 import { useEngine, useEngineState } from "./engine-provider";
+import { InviteDialog } from "./invite-dialog";
 import { CommandPalette } from "./palette/command-palette";
 import { PresenceAvatars } from "./presence-avatars";
 import { SyncAnnouncer } from "./sync-announcer";
@@ -38,6 +39,7 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectKey, setNewProjectKey] = useState("");
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // Move focus to the new-project name field once the form opens.
   // This is the accessible alternative to autoFocus, which fires on mount
@@ -75,6 +77,13 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
         <div className={styles.brand}>
           <p className={styles.eyebrow}>Slipstream</p>
           <h2 className={styles.workspaceName}>{workspace?.name ?? "Workspace"}</h2>
+          <button
+            type="button"
+            onClick={() => setInviteOpen(true)}
+            className={styles.inviteBtn}
+          >
+            + Invite teammate
+          </button>
         </div>
 
         <nav className={styles.nav} aria-label="Projects">
@@ -157,6 +166,7 @@ export function AppShell({ children }: { children: ReactNode }): React.JSX.Eleme
 
       <CommandPalette contextProjectId={projectIdFromPathname(pathname)} />
       <SyncAnnouncer />
+      <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }

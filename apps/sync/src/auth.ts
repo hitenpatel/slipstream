@@ -21,7 +21,14 @@ const SignupSchema = z.object({
   password: z.string().min(8).max(200),
   displayName: z.string().min(1).max(80),
   workspaceName: z.string().min(1).max(80).optional(),
+  /**
+   * Optional invite token. When present, the signup joins the inviter's
+   * workspace via a Membership entity instead of bootstrapping a fresh one.
+   */
+  inviteToken: z.string().min(1).max(128).optional(),
 });
+
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const LoginSchema = z.object({
   email: z.string().email().toLowerCase(),
@@ -110,6 +117,24 @@ async function bootstrapWorkspace(
   await applyPush(db, { clientID: args.userId, mutations });
 }
 
+/**
+ * Accept-invite path: skip the bootstrap. We don't push anything because the
+ * workspace already exists with all its entities; the joiner just gets a
+ * session pointing at the same workspaceId. The Membership entity isn't
+ * mutator-driven yet — the session-level membership check (which is what the
+ * pull/push gates use) is sufficient for M7b's "two users on one workspace"
+ * goal. A future PR can wire up createMembership through a mutator.
+ */
+async function acceptInvite(
+  db: SlipstreamDb,
+  args: { invite: import("./db.js").InviteDoc; joinerId: string },
+): Promise<void> {
+  await db.invites.updateOne(
+    { _id: args.invite._id, usedBy: { $exists: false } },
+    { $set: { usedBy: args.joinerId, usedAt: Date.now() } },
+  );
+}
+
 export function createAuthRoutes(db: SlipstreamDb): Hono {
   const app = new Hono();
 
@@ -119,34 +144,47 @@ export function createAuthRoutes(db: SlipstreamDb): Hono {
     if (!parsed.success) {
       return c.json({ error: "bad_request", issues: parsed.error.issues }, 400);
     }
-    const { email, password, displayName, workspaceName } = parsed.data;
+    const { email, password, displayName, workspaceName, inviteToken } = parsed.data;
 
     const existing = await db.accounts.findOne({ email });
     if (existing) {
       return c.json({ error: "email_taken" }, 409);
     }
 
+    // Resolve the invite first so we can fail early without creating an
+    // orphaned account on a bad token.
+    let invite: import("./db.js").InviteDoc | null = null;
+    if (inviteToken) {
+      invite = await db.invites.findOne({ _id: inviteToken });
+      if (!invite) return c.json({ error: "invite_not_found" }, 404);
+      if (invite.expiresAt <= Date.now()) return c.json({ error: "invite_expired" }, 410);
+      if (invite.usedBy) return c.json({ error: "invite_already_used" }, 409);
+    }
+
     const passwordHash = await hash(password);
     const userId = uuidv7();
-    const workspaceId = uuidv7();
-    const account = {
+    const workspaceId = invite ? invite.workspaceId : uuidv7();
+    await db.accounts.insertOne({
       _id: userId,
       email,
       passwordHash,
       workspaceId,
       createdAt: Date.now(),
-    };
-    await db.accounts.insertOne(account);
+    });
     void displayName; // reserved for the User entity once createUser lands as a mutator
     void between; // reserved for first-project default position once createIssue is wired
 
-    await bootstrapWorkspace(db, {
-      userId,
-      workspaceId,
-      email,
-      displayName,
-      workspaceName: workspaceName ?? `${displayName}'s workspace`,
-    });
+    if (invite) {
+      await acceptInvite(db, { invite, joinerId: userId });
+    } else {
+      await bootstrapWorkspace(db, {
+        userId,
+        workspaceId,
+        email,
+        displayName,
+        workspaceName: workspaceName ?? `${displayName}'s workspace`,
+      });
+    }
 
     const token = newToken();
     await db.sessions.insertOne({
@@ -158,7 +196,7 @@ export function createAuthRoutes(db: SlipstreamDb): Hono {
     });
     writeCookie(c, token);
 
-    return c.json({ ok: true, userId, workspaceId, email });
+    return c.json({ ok: true, userId, workspaceId, email, joinedViaInvite: !!invite });
   });
 
   app.post("/api/auth/login", async (c) => {
@@ -207,6 +245,56 @@ export function createAuthRoutes(db: SlipstreamDb): Hono {
       user: account
         ? { userId: account._id, email: account.email, workspaceId: account.workspaceId }
         : null,
+    });
+  });
+
+  /**
+   * Create an invite for the caller's workspace. Returns the token; the
+   * web app composes the /join/<token> URL on its side so this endpoint
+   * doesn't have to know about the public origin.
+   */
+  app.post("/api/auth/invite", async (c) => {
+    const session = await readSession(db, getCookie(c, SESSION_COOKIE));
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+
+    const token = newToken();
+    const now = Date.now();
+    await db.invites.insertOne({
+      _id: token,
+      workspaceId: session.workspaceId,
+      invitedBy: session.userId,
+      createdAt: now,
+      expiresAt: now + INVITE_TTL_MS,
+    });
+    return c.json({ token, expiresAt: now + INVITE_TTL_MS });
+  });
+
+  /**
+   * Public lookup so the /join/<token> landing page can show the workspace
+   * name and inviter's email before the user commits to signing up.
+   */
+  app.get("/api/auth/invite/:token", async (c) => {
+    const token = c.req.param("token");
+    const invite = await db.invites.findOne({ _id: token });
+    if (!invite) return c.json({ error: "invite_not_found" }, 404);
+    if (invite.expiresAt <= Date.now()) return c.json({ error: "invite_expired" }, 410);
+    if (invite.usedBy) return c.json({ error: "invite_already_used" }, 409);
+
+    const inviter = await db.accounts.findOne({ _id: invite.invitedBy });
+    // Workspace entity name comes out of the `entities` collection because
+    // workspaces are mutator-managed; the account row only stores the id.
+    const workspace = await db.entities.findOne({
+      _id: invite.workspaceId,
+      kind: "workspace",
+    });
+    const workspaceName =
+      workspace && workspace.kind === "workspace" ? workspace.name : "a workspace";
+
+    return c.json({
+      workspaceId: invite.workspaceId,
+      workspaceName,
+      inviterEmail: inviter?.email ?? "someone",
+      expiresAt: invite.expiresAt,
     });
   });
 
