@@ -36,9 +36,13 @@ beforeEach(async () => {
         err ? reject(err) : resolve(),
       );
     });
-  // wipe accounts/sessions between tests so emails don't collide
+  // wipe accounts/sessions/invites/entities between tests so state is clean
   await db.accounts.deleteMany({});
   await db.sessions.deleteMany({});
+  await db.invites.deleteMany({});
+  await db.entities.deleteMany({});
+  await db.clients.deleteMany({});
+  await db.counters.deleteMany({});
 });
 
 afterEach(async () => {
@@ -161,5 +165,208 @@ describe("auth", () => {
     const me = await fetch(`${baseUrl}/api/auth/me`);
     const body = await me.json();
     expect(body.user).toBeNull();
+  });
+});
+
+async function signup(baseUrl: string, email: string): Promise<{ cookie: string; body: { workspaceId: string; userId: string } }> {
+  const res = await fetch(`${baseUrl}/api/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: "correct-horse-battery-staple", displayName: email.split("@")[0] }),
+  });
+  const setCookie = res.headers.get("set-cookie") ?? "";
+  const m = setCookie.match(/slipstream_session=([^;]+)/);
+  if (!m) throw new Error(`no session cookie: ${res.status} ${await res.text()}`);
+  const body = (await res.json()) as { workspaceId: string; userId: string };
+  return { cookie: m[1]!, body };
+}
+
+describe("invites", () => {
+  it("authed user can create an invite for their workspace", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+
+    const res = await fetch(`${baseUrl}/api/auth/invite`, {
+      method: "POST",
+      headers: { Cookie: `slipstream_session=${alice.cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.expiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it("public lookup returns workspace name + inviter email", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+    const created = await fetch(`${baseUrl}/api/auth/invite`, {
+      method: "POST",
+      headers: { Cookie: `slipstream_session=${alice.cookie}` },
+    }).then((r) => r.json());
+
+    const lookup = await fetch(`${baseUrl}/api/auth/invite/${created.token}`);
+    expect(lookup.status).toBe(200);
+    const body = await lookup.json();
+    expect(body.inviterEmail).toBe("alice@example.com");
+    expect(body.workspaceName).toMatch(/workspace/);
+    expect(body.workspaceId).toBe(alice.body.workspaceId);
+  });
+
+  it("signup with valid invite joins the existing workspace (no bootstrap)", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+    const created = await fetch(`${baseUrl}/api/auth/invite`, {
+      method: "POST",
+      headers: { Cookie: `slipstream_session=${alice.cookie}` },
+    }).then((r) => r.json());
+
+    // Alice's workspace has a project already (the Welcome bootstrap).
+    const projectsBefore = await db.entities.countDocuments({
+      kind: "project",
+      workspaceId: alice.body.workspaceId,
+    });
+    expect(projectsBefore).toBe(1);
+
+    const bobRes = await fetch(`${baseUrl}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "bob@example.com",
+        password: "correct-horse-battery-staple",
+        displayName: "Bob",
+        inviteToken: created.token,
+      }),
+    });
+    expect(bobRes.status).toBe(200);
+    const bob = await bobRes.json();
+    expect(bob.workspaceId).toBe(alice.body.workspaceId);
+    expect(bob.joinedViaInvite).toBe(true);
+
+    // Joining didn't create a second workspace or a duplicate project.
+    const workspaces = await db.entities.countDocuments({ kind: "workspace" });
+    expect(workspaces).toBe(1);
+    const projectsAfter = await db.entities.countDocuments({
+      kind: "project",
+      workspaceId: alice.body.workspaceId,
+    });
+    expect(projectsAfter).toBe(1);
+  });
+
+  it("signup with already-used invite is rejected with 409", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+    const created = await fetch(`${baseUrl}/api/auth/invite`, {
+      method: "POST",
+      headers: { Cookie: `slipstream_session=${alice.cookie}` },
+    }).then((r) => r.json());
+
+    // First Bob redeems it.
+    await fetch(`${baseUrl}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "bob@example.com",
+        password: "correct-horse-battery-staple",
+        displayName: "Bob",
+        inviteToken: created.token,
+      }),
+    });
+    // Second Bob tries to use the same token.
+    const second = await fetch(`${baseUrl}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "bob2@example.com",
+        password: "correct-horse-battery-staple",
+        displayName: "Bob 2",
+        inviteToken: created.token,
+      }),
+    });
+    expect(second.status).toBe(409);
+    const body = await second.json();
+    expect(body.error).toBe("invite_already_used");
+  });
+
+  it("signup with unknown token returns 404", async () => {
+    const res = await fetch(`${baseUrl}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "bob@example.com",
+        password: "correct-horse-battery-staple",
+        displayName: "Bob",
+        inviteToken: "deadbeef".repeat(8),
+      }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("lookup of expired invite returns 410", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+    const created = await fetch(`${baseUrl}/api/auth/invite`, {
+      method: "POST",
+      headers: { Cookie: `slipstream_session=${alice.cookie}` },
+    }).then((r) => r.json());
+
+    await db.invites.updateOne(
+      { _id: created.token },
+      { $set: { expiresAt: Date.now() - 1 } },
+    );
+
+    const res = await fetch(`${baseUrl}/api/auth/invite/${created.token}`);
+    expect(res.status).toBe(410);
+  });
+});
+
+describe("pull workspace isolation", () => {
+  it("a member of workspace A cannot pull entities from workspace B", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+    const carol = await signup(baseUrl, "carol@example.com");
+    expect(alice.body.workspaceId).not.toBe(carol.body.workspaceId);
+
+    // Alice pulls — should see entities from her workspace only.
+    const alicePull = await fetch(`${baseUrl}/api/pull`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: `slipstream_session=${alice.cookie}` },
+      body: JSON.stringify({ clientID: alice.body.userId, cookie: 0 }),
+    });
+    expect(alicePull.status).toBe(200);
+    const aliceBody = await alicePull.json();
+    for (const op of aliceBody.patch) {
+      if (op.op === "put") expect(op.entity.workspaceId).toBe(alice.body.workspaceId);
+    }
+    expect(aliceBody.patch.length).toBeGreaterThan(0); // her bootstrap exists
+  });
+
+  it("pull without a session cookie is rejected with 401", async () => {
+    const res = await fetch(`${baseUrl}/api/pull`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientID: "x", cookie: 0 }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("push that names a foreign workspaceId is rejected with 403", async () => {
+    const alice = await signup(baseUrl, "alice@example.com");
+    const foreignWorkspaceId = "019eb800-0000-7000-8000-000000000fff";
+
+    const res = await fetch(`${baseUrl}/api/push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: `slipstream_session=${alice.cookie}` },
+      body: JSON.stringify({
+        clientID: alice.body.userId,
+        mutations: [
+          {
+            id: 1,
+            clientID: alice.body.userId,
+            name: "createProject",
+            args: {
+              id: "019eb800-0000-7000-8000-000000000001",
+              workspaceId: foreignWorkspaceId,
+              name: "Stolen",
+              key: "X",
+            },
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(403);
   });
 });

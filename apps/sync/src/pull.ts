@@ -2,17 +2,22 @@ import type { Entity, PatchOp, PullRequest, PullResponse } from "@slipstream/pro
 import type { SlipstreamDb } from "./db.js";
 
 /**
- * Pull: hand the client every entity in its workspaces whose version is
+ * Pull: hand the client every entity in its workspace whose version is
  * strictly greater than the client's cookie, plus the new cookie and the
  * client's lastMutationID.
  *
- * M1 scope: workspace permission is "any workspace the entities mention" until
- * Memberships are wired up properly in M4. The shape is right; we just don't
- * enforce permissions yet.
+ * Permissions: the caller passes the authenticated session's workspaceId
+ * (resolved from the cookie in the route handler). Without scoping, any
+ * signed-in user could read any workspace — a real concern once M7b's
+ * invite flow makes shared workspaces a thing.
  */
-export async function pull(db: SlipstreamDb, req: PullRequest): Promise<PullResponse> {
+export async function pull(
+  db: SlipstreamDb,
+  req: PullRequest,
+  scope: { workspaceId: string },
+): Promise<PullResponse> {
   const docs = await db.entities
-    .find({ version: { $gt: req.cookie } })
+    .find({ workspaceId: scope.workspaceId, version: { $gt: req.cookie } })
     .sort({ version: 1 })
     .toArray();
 

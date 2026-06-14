@@ -8,6 +8,7 @@ import {
   PushRequestSchema,
 } from "@slipstream/protocol";
 import { SESSION_COOKIE, createAuthRoutes, readSession } from "./auth.js";
+import { getCookie } from "hono/cookie";
 import { connect, type SlipstreamDb } from "./db.js";
 import { applyPush } from "./push.js";
 import { pull } from "./pull.js";
@@ -33,10 +34,25 @@ export function createApp(deps: AppDeps): Hono {
   );
 
   app.post("/api/push", async (c) => {
+    const session = await readSession(db, getCookie(c, SESSION_COOKIE));
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+
     const body = await c.req.json().catch(() => ({}));
     const parsed = PushRequestSchema.safeParse(body);
     if (!parsed.success) {
       return c.json({ error: "bad_request", issues: parsed.error.issues }, 400);
+    }
+    // Defence in depth: every mutation that names a workspaceId in its args
+    // must match the session's workspaceId. createWorkspace + createProject
+    // declare a workspaceId; mutators that mutate an existing entity (e.g.
+    // updateIssueStatus) don't — those are scoped implicitly because the
+    // entity itself can only have been pulled by a member of the workspace
+    // (per the pull scope above).
+    for (const m of parsed.data.mutations) {
+      const args = (m.args ?? {}) as { workspaceId?: string };
+      if (args.workspaceId && args.workspaceId !== session.workspaceId) {
+        return c.json({ error: "workspace_mismatch" }, 403);
+      }
     }
     try {
       const res = await applyPush(db, parsed.data);
@@ -48,12 +64,15 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.post("/api/pull", async (c) => {
+    const session = await readSession(db, getCookie(c, SESSION_COOKIE));
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+
     const body = await c.req.json().catch(() => ({}));
     const parsed = PullRequestSchema.safeParse(body);
     if (!parsed.success) {
       return c.json({ error: "bad_request", issues: parsed.error.issues }, 400);
     }
-    const res = await pull(db, parsed.data);
+    const res = await pull(db, parsed.data, { workspaceId: session.workspaceId });
     return c.json(res);
   });
 
