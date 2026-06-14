@@ -7,21 +7,44 @@ import type {
 import type { AuthedSession } from "./auth.js";
 
 /**
- * In-process registry of every authenticated WebSocket, plus the user it
- * belongs to and where in the app they're currently focused.
+ * Registry of every authenticated WebSocket, plus the user it belongs to and
+ * where in the app they're currently focused.
  *
- * Two public surfaces:
+ * Two implementations:
  *
- * - `pokeAll(...)`: fans out a {type:"poke"} message (the M3 behaviour).
- * - `setFocus(socket, focus)`: updates that socket's presence and fans the
- *   new workspace-scoped presence list to everyone in the same workspace.
+ * - `InProcessPresenceBroker` (the M3 default): everything lives in this
+ *   process's memory. Suitable when a single sync instance handles all
+ *   connections — the homelab demo and `pnpm dev`.
  *
- * Per-workspace fan-out happens automatically because each socket knows its
- * workspaceId from the session it joined with. Anonymous sockets are a
- * thing of the past — every connection has been auth-gated by the time it
- * lands in `add()`.
+ * - `RedisPresenceBroker` (M7d): presence state lives in Redis hashes and
+ *   pokes/changes fan out over Redis pub/sub. Multiple sync instances
+ *   behind a load balancer see each other's clients; horizontal scale-out
+ *   is just "add another container and point it at the same Redis".
+ *
+ * Both implement the same `PresenceBroker` interface, so the server wires
+ * one or the other based on the `REDIS_URL` env var without callers
+ * caring which is active.
  */
-export class PresenceBroker {
+export interface PresenceBroker {
+  /** Register an authenticated socket. */
+  add(socket: WebSocket, session: AuthedSession, email: string): Promise<void>;
+  /** Remove a socket on close/error. */
+  remove(socket: WebSocket): Promise<void>;
+  /** Update where a socket is focused. */
+  setFocus(socket: WebSocket, focus: PresenceFocus): Promise<void>;
+  /** Fan out a `poke` to every connected client, optionally excluding one. */
+  pokeAll(except?: WebSocket): Promise<void>;
+  /** Local connection count for the health endpoint. */
+  size(): number;
+  /** Optional teardown for backed implementations that hold resources. */
+  close?(): Promise<void>;
+}
+
+/**
+ * In-process implementation. Identical behaviour to the M3-era class. No
+ * cross-instance coordination; sufficient for single-instance deployments.
+ */
+export class InProcessPresenceBroker implements PresenceBroker {
   private entries = new Map<
     WebSocket,
     {
@@ -32,18 +55,17 @@ export class PresenceBroker {
     }
   >();
 
-  add(socket: WebSocket, session: AuthedSession, email: string): void {
+  async add(socket: WebSocket, session: AuthedSession, email: string): Promise<void> {
     this.entries.set(socket, {
       session,
       email,
       focus: null,
       updatedAt: Date.now(),
     });
-    // First connection: send them the current presence snapshot of their workspace.
     this.broadcastWorkspacePresence(session.workspaceId);
   }
 
-  remove(socket: WebSocket): void {
+  async remove(socket: WebSocket): Promise<void> {
     const entry = this.entries.get(socket);
     this.entries.delete(socket);
     if (entry) this.broadcastWorkspacePresence(entry.session.workspaceId);
@@ -53,11 +75,7 @@ export class PresenceBroker {
     return this.entries.size;
   }
 
-  /**
-   * Update a socket's focus, refresh its updatedAt, and broadcast the new
-   * workspace presence list. Idempotent on no-op transitions.
-   */
-  setFocus(socket: WebSocket, focus: PresenceFocus): void {
+  async setFocus(socket: WebSocket, focus: PresenceFocus): Promise<void> {
     const entry = this.entries.get(socket);
     if (!entry) return;
     if (sameFocus(entry.focus, focus)) return;
@@ -66,8 +84,7 @@ export class PresenceBroker {
     this.broadcastWorkspacePresence(entry.session.workspaceId);
   }
 
-  /** Fire a poke to every connected socket. M3-era behaviour preserved. */
-  pokeAll(except?: WebSocket): void {
+  async pokeAll(except?: WebSocket): Promise<void> {
     const msg: ServerMessage = { type: "poke" };
     const payload = JSON.stringify(msg);
     for (const socket of this.entries.keys()) {
@@ -80,11 +97,6 @@ export class PresenceBroker {
     }
   }
 
-  /**
-   * Send the current presence snapshot for the workspace to each socket in it.
-   * Each user is reported once per userId, collapsing multiple tabs into one
-   * entry whose focus matches the most-recently-updated tab.
-   */
   private broadcastWorkspacePresence(workspaceId: string): void {
     const users = this.snapshotWorkspaceUsers(workspaceId);
     const msg: ServerMessage = { type: "presence", users };
@@ -124,3 +136,5 @@ function sameFocus(a: PresenceFocus, b: PresenceFocus): boolean {
   if (a === null || b === null) return false;
   return a.kind === b.kind && a.id === b.id;
 }
+
+export { sameFocus };

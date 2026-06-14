@@ -12,7 +12,7 @@ import { getCookie } from "hono/cookie";
 import { connect, type SlipstreamDb } from "./db.js";
 import { applyPush } from "./push.js";
 import { pull } from "./pull.js";
-import { PresenceBroker } from "./presence.js";
+import { InProcessPresenceBroker, type PresenceBroker } from "./presence.js";
 
 export interface AppDeps {
   db: SlipstreamDb;
@@ -56,7 +56,8 @@ export function createApp(deps: AppDeps): Hono {
     }
     try {
       const res = await applyPush(db, parsed.data);
-      broker.pokeAll();
+      // Fire-and-forget — a poke is advisory, callers don't wait for it.
+      void broker.pokeAll();
       return c.json(res);
     } catch (err) {
       return c.json({ error: "push_failed", message: (err as Error).message }, 500);
@@ -143,9 +144,13 @@ export function attachSyncSocket(
       }
 
       wss.handleUpgrade(req, rawSocket, head, (ws) => {
-        broker.add(ws, auth.session, auth.email);
-        ws.on("close", () => broker.remove(ws));
-        ws.on("error", () => broker.remove(ws));
+        // broker.add is async (Redis writes a hash + publishes); but we
+        // don't block accepting the socket on that completing. Stale
+        // ordering between hello/presence vs add is fine because each
+        // presence broadcast snapshots the current state from the source.
+        void broker.add(ws, auth.session, auth.email);
+        ws.on("close", () => void broker.remove(ws));
+        ws.on("error", () => void broker.remove(ws));
 
         ws.on("message", (raw) => {
           let parsed;
@@ -156,7 +161,7 @@ export function attachSyncSocket(
           }
           if (!parsed.success) return;
           if (parsed.data.type === "focus") {
-            broker.setFocus(ws, parsed.data.focus);
+            void broker.setFocus(ws, parsed.data.focus);
           }
           // M3-style hello messages are dropped — the upgrade itself is the
           // authentication step now.
@@ -193,7 +198,29 @@ async function main(): Promise<void> {
   }
   const db = await connect(uri);
   await db.ensureIndexes();
-  const broker = new PresenceBroker();
+
+  // REDIS_URL switches the broker from in-process to Redis-backed pub/sub
+  // so multiple sync instances behind a load balancer share workspace
+  // presence + poke fan-out. Absent → single-instance behaviour.
+  let broker: PresenceBroker;
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    const ioredis = await import("ioredis");
+    // ioredis 5 ships both a CJS-style default and an ESM named export.
+    // Use named — it's stable across both versions.
+    const Redis = ioredis.Redis;
+    const pub = new Redis(redisUrl);
+    const sub = new Redis(redisUrl);
+    const { RedisPresenceBroker } = await import("./presence-redis.js");
+    broker = new RedisPresenceBroker(pub, sub);
+    // eslint-disable-next-line no-console
+    console.log(`slipstream-sync presence: Redis (${new URL(redisUrl).host})`);
+  } else {
+    broker = new InProcessPresenceBroker();
+    // eslint-disable-next-line no-console
+    console.log("slipstream-sync presence: in-process");
+  }
+
   const app = createApp({ db, broker });
 
   const port = Number(process.env.PORT ?? 8787);

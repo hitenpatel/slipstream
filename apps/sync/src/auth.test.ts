@@ -2,7 +2,7 @@ import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./server.js";
-import { PresenceBroker } from "./presence.js";
+import { InProcessPresenceBroker } from "./presence.js";
 import { startMemoryDb } from "./test-helpers.js";
 import type { SlipstreamDb } from "./db.js";
 
@@ -21,7 +21,7 @@ let baseUrl: string;
 let closeServer: () => Promise<void>;
 
 beforeEach(async () => {
-  const broker = new PresenceBroker();
+  const broker = new InProcessPresenceBroker();
   const app = createApp({ db, broker });
   const httpServer = serve({ fetch: app.fetch, port: 0 });
   await new Promise<void>((resolve) => {
