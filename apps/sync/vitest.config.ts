@@ -13,5 +13,18 @@ export default defineConfig({
     // Don't run files in parallel — keep deterministic ordering and avoid
     // port pressure when multiple Mongo instances boot.
     fileParallelism: false,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.ts"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/test-helpers.ts",
+        // dist isn't measured; the server entrypoint is exercised
+        // indirectly via the http tests but its main() isn't reached
+        // because we import without calling it.
+      ],
+    },
   },
 });

@@ -1,0 +1,48 @@
+# Codecov configuration.
+#
+# This repo is a monorepo with four test workspaces. We upload one lcov per
+# workspace so the per-package contribution is visible separately on Codecov.
+
+coverage:
+  status:
+    project:
+      default:
+        # Don't fail the status check if coverage moves by a couple of points;
+        # the README badge is the visible signal, not a merge gate.
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        # Patches should be at least 60% covered. UI patches that aren't unit-
+        # tested at all (Next pages, RSC layouts) are excluded by the per-
+        # workspace include lists in each vitest.config.ts, so this only
+        # bites when someone adds a new pure helper without tests.
+        target: 60%
+        threshold: 5%
+
+flags:
+  protocol:
+    paths:
+      - packages/protocol/src/
+  client:
+    paths:
+      - packages/client/src/
+  sync:
+    paths:
+      - apps/sync/src/
+  web:
+    paths:
+      - apps/web/app/
+
+comment:
+  layout: "header, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/dist/"
+  - "**/.next/"
+  - "**/node_modules/"
+  - "tools/**"

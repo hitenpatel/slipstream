@@ -29,8 +29,24 @@ jobs:
 
       - run: pnpm turbo run typecheck
       - run: pnpm turbo run lint
-      - run: pnpm turbo run test
+      - run: pnpm turbo run test:coverage
       - run: pnpm turbo run build
+
+      - name: upload coverage to codecov
+        if: success() || failure()
+        uses: codecov/codecov-action@v5
+        with:
+          # Public repo: no token required for uploads from forks or main.
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: >-
+            packages/protocol/coverage/lcov.info,
+            packages/client/coverage/lcov.info,
+            apps/sync/coverage/lcov.info,
+            apps/web/coverage/lcov.info
+          # Each lcov file is named for its workspace so Codecov shows the
+          # per-package contribution as a separate flag.
+          flags: protocol,client,sync,web
+          fail_ci_if_error: false
 
   docker:
     name: docker image build smoke

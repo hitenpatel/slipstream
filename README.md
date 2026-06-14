@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/hitenpatel/slipstream/actions/workflows/ci.yml/badge.svg)](https://github.com/hitenpatel/slipstream/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6ea8ff.svg)](./LICENSE)
+[![coverage](https://codecov.io/gh/hitenpatel/slipstream/branch/main/graph/badge.svg)](https://codecov.io/gh/hitenpatel/slipstream)
 [![tests](https://img.shields.io/badge/tests-60_passing-3fbf6c.svg)](#testing)
 [![live demo](https://img.shields.io/badge/demo-tracker.hiten.dev-6ea8ff.svg)](https://tracker.hiten.dev)
 
@@ -223,16 +224,26 @@ slipstream/
 
 ## Testing
 
-60 tests across the stack, 20/20 turbo tasks per CI run.
+60 tests across the stack, 20/20 turbo tasks per CI run. CI runs each
+workspace's suite with `--coverage` and uploads one lcov-per-workspace to
+Codecov, so the per-package contribution is visible separately under the
+flags `protocol`, `client`, `sync`, `web`.
 
-| Package | Tests | Highlights |
-| --- | --- | --- |
-| `packages/protocol` | 13 | uuidv7 monotonicity; fractional indexing bounds + 200-round insertion; mutator semantics + idempotency |
-| `apps/sync` | 20 | push: monotonic versions, idempotent replay, gap break + resume, rollback on throw, total order under concurrency; pull: empty-when-current, soft-delete emission; socket: auth gate, hello, register/deregister, broker fan-out, presence broadcast |
-| `packages/client` | 16 | optimistic apply, rebase to confirmed version, offline survival; 2- and 3-client randomised-interleaving convergence; poke channel reconnect backoff curve; presence dispatch + republish-on-reconnect |
-| `apps/web` | 11 | palette substring scoring (prefix vs mid-string ranking, multi-token AND, command tie-break); palette combobox markup axe-clean; KeepAlive contract (both children mounted, inactive frame inert + aria-hidden) |
+| Package | Tests | Coverage (Vitest v8) | Highlights |
+| --- | --- | --- | --- |
+| `packages/protocol` | 13 | ~73% | uuidv7 monotonicity; fractional indexing bounds + 200-round insertion; mutator semantics + idempotency |
+| `apps/sync` | 20 | ~86% | push: monotonic versions, idempotent replay, gap break + resume, rollback on throw, total order under concurrency; pull: empty-when-current, soft-delete emission; socket: auth gate, hello, register/deregister, broker fan-out, presence broadcast |
+| `packages/client` | 16 | ~73% | optimistic apply, rebase to confirmed version, offline survival; 2- and 3-client randomised-interleaving convergence; poke channel reconnect backoff curve; presence dispatch + republish-on-reconnect |
+| `apps/web` | 11 | 100%¹ | palette substring scoring (prefix vs mid-string ranking, multi-token AND, command tie-break); palette combobox markup axe-clean; KeepAlive contract (both children mounted, inactive frame inert + aria-hidden) |
 
-Run locally with `pnpm turbo run typecheck lint test build`.
+¹ The web percentage is computed over the files explicitly under unit test
+(`palette-search.ts`, `keep-alive.tsx`). The rest of the Next.js UI is covered
+end-to-end by the live demo and the (planned) Playwright keyboard-only flows
+in M7 — measuring it as unit-coverage would be misleading.
+
+Run locally with `pnpm turbo run typecheck lint test build`, or
+`pnpm turbo run test:coverage` to produce lcov reports under
+`<workspace>/coverage/`.
 
 ## Running it
 
