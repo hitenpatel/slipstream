@@ -17,12 +17,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'lint: protocol (no rules wired yet)'",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
   },
   "dependencies": {
     "zod": "3.23.8"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "2.1.8",
     "vitest": "2.1.8"
   }
 }
