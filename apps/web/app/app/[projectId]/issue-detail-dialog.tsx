@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import type * as Y from "yjs";
 import {
   IssueStatus,
+  Y_TEXT_FIELD,
+  applyUpdateB64,
+  decodeDocOrFromText,
+  diffUpdateB64,
+  readBody,
+  snapshotStateVector,
   uuidv7,
   type Issue,
   type IssueStatus as IssueStatusT,
@@ -110,23 +117,50 @@ function DetailBody({
   onMutate: (name: string, args: unknown) => Promise<void>;
 }): React.JSX.Element {
   const [title, setTitle] = useState(issue.title);
-  const [description, setDescription] = useState(issue.description);
   const [commentBody, setCommentBody] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
 
-  // Re-sync local edit state when the underlying issue changes from elsewhere
-  // (a remote tab, the user reopening the dialog on a different issue, etc).
+  // Description is a per-field CRDT (M7c / ADR-001 future extension): the
+  // issue stores a base64-encoded Y.Doc state. We keep one Y.Doc per
+  // dialog open, decoded from the server's current state. Every time the
+  // server's description advances (a remote tab edited it, or our own
+  // local edit came back confirmed), we apply that state into the local
+  // doc — Yjs dedupes by op id so this is idempotent.
+  const descriptionDoc = useDescriptionDoc(issue.id, issue.description);
+  const [description, setDescription] = useState(() => readBody(descriptionDoc));
+
+  // Re-render the textarea whenever the doc's body changes (either from a
+  // remote update or from our own input).
+  useEffect(() => {
+    setDescription(readBody(descriptionDoc));
+    const onUpdate = () => setDescription(readBody(descriptionDoc));
+    descriptionDoc.on("update", onUpdate);
+    return () => descriptionDoc.off("update", onUpdate);
+  }, [descriptionDoc]);
+
+  // Re-sync local title state when the underlying issue changes from elsewhere.
   useEffect(() => setTitle(issue.title), [issue.title]);
-  useEffect(() => setDescription(issue.description), [issue.description]);
 
   async function saveTitle(): Promise<void> {
     const next = title.trim();
     if (!next || next === issue.title) return;
     await onMutate("updateIssue", { id: issue.id, patch: { title: next } });
   }
-  async function saveDescription(): Promise<void> {
-    if (description === issue.description) return;
-    await onMutate("updateIssue", { id: issue.id, patch: { description } });
+
+  /**
+   * Diff the textarea's new value against the Y.Text, apply a minimal
+   * delete-then-insert at the common-prefix boundary, capture the Y.Doc
+   * update since the snapshot, and send it through the engine. Yjs's
+   * CRDT semantics ensure concurrent edits from another tab/user merge
+   * deterministically.
+   */
+  async function onDescriptionInput(next: string): Promise<void> {
+    const sv = snapshotStateVector(descriptionDoc);
+    applyTextDiff(descriptionDoc.getText(Y_TEXT_FIELD), next);
+    const updateB64 = diffUpdateB64(descriptionDoc, sv);
+    if (!updateB64) return;
+    setDescription(next);
+    await onMutate("editIssueDescription", { id: issue.id, updateB64 });
   }
   async function setStatus(s: IssueStatusT): Promise<void> {
     await onMutate("updateIssueStatus", { id: issue.id, status: s });
@@ -261,8 +295,10 @@ function DetailBody({
         <textarea
           className={styles.description}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onBlur={saveDescription}
+          // Per-character publishes are debounced inside onDescriptionInput
+          // via the Y.Text diff (no diff → no op → no send). Concurrent
+          // edits from another user merge through Yjs CRDT semantics.
+          onChange={(e) => void onDescriptionInput(e.target.value)}
           placeholder="Add a description…"
           rows={6}
         />
@@ -333,4 +369,64 @@ function pickColour(seed: string): string {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length]!;
+}
+
+/**
+ * Per-issue Y.Doc cache hook. Builds (or reuses) a Y.Doc seeded from the
+ * server's current description state. Every time the server's description
+ * field advances, applyUpdateB64 brings the local doc up to date — Yjs
+ * dedupes by op id, so applying our own already-applied edits is a no-op.
+ */
+function useDescriptionDoc(issueId: string, serverDescription: string): Y.Doc {
+  const docs = useRef(new Map<string, Y.Doc>());
+  const doc = useMemo(() => {
+    const existing = docs.current.get(issueId);
+    if (existing) return existing;
+    const fresh = decodeDocOrFromText(serverDescription);
+    docs.current.set(issueId, fresh);
+    return fresh;
+  }, [issueId, serverDescription]);
+
+  // When the server's description changes (e.g. a remote user edited it),
+  // merge that state into our local doc.
+  useEffect(() => {
+    if (!serverDescription) return;
+    // Apply the new server state as if it were an update. Yjs accepts a
+    // full state as input to applyUpdate.
+    applyUpdateB64(doc, serverDescription);
+  }, [doc, serverDescription]);
+
+  return doc;
+}
+
+/**
+ * Minimal text diff applied to a Y.Text: find the common prefix and suffix,
+ * delete the changed middle, insert the new content. One delete + one
+ * insert per keystroke, but each is a standalone Yjs op so concurrent
+ * edits at non-overlapping ranges merge cleanly.
+ */
+function applyTextDiff(ytext: Y.Text, next: string): void {
+  const current = ytext.toString();
+  if (current === next) return;
+
+  let prefix = 0;
+  const minLen = Math.min(current.length, next.length);
+  while (prefix < minLen && current.charCodeAt(prefix) === next.charCodeAt(prefix)) {
+    prefix++;
+  }
+
+  let suffix = 0;
+  while (
+    suffix < minLen - prefix &&
+    current.charCodeAt(current.length - 1 - suffix) ===
+      next.charCodeAt(next.length - 1 - suffix)
+  ) {
+    suffix++;
+  }
+
+  const deleteLen = current.length - prefix - suffix;
+  const insertText = next.slice(prefix, next.length - suffix);
+
+  if (deleteLen > 0) ytext.delete(prefix, deleteLen);
+  if (insertText.length > 0) ytext.insert(prefix, insertText);
 }
