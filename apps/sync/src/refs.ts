@@ -22,6 +22,7 @@ export function refsFor(m: Mutation): Array<{ kind: EntityKind; id: string }> {
     case "updateIssueStatus":
     case "moveIssue":
     case "updateIssue":
+    case "editIssueDescription":
     case "deleteIssue":
       return id ? [{ kind: "issue", id }] : [];
     case "addComment":

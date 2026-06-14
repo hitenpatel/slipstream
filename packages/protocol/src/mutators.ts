@@ -10,6 +10,11 @@ import {
   type Workspace,
 } from "./entities.js";
 import type { Mutator, Tx } from "./tx.js";
+import {
+  applyUpdateB64,
+  decodeDocOrFromText,
+  encodeDoc,
+} from "./ydoc.js";
 
 /**
  * Every mutator is defined here once. It runs identically on the client (against
@@ -76,6 +81,24 @@ export const UpdateIssueArgs = z.object({
     .refine((p) => Object.keys(p).length > 0, "patch is empty"),
 });
 export type UpdateIssueArgs = z.infer<typeof UpdateIssueArgs>;
+
+/**
+ * Edit an issue's `description` field via a Yjs CRDT update. The update is a
+ * base64-encoded `Y.applyUpdate` payload generated client-side from the
+ * current Y.Doc. The mutator runs on both client and server: it decodes the
+ * existing description as a Y.Doc, applies the update, re-encodes, and writes
+ * the new entity.
+ *
+ * Because Y.Doc CRDTs are commutative, applying updates in any order
+ * produces the same merged state — so concurrent edits across clients
+ * converge even though the server's transaction processes mutations
+ * sequentially.
+ */
+export const EditIssueDescriptionArgs = z.object({
+  id: IdSchema,
+  updateB64: z.string().min(1).max(64 * 1024), // 64 KiB ceiling on a single update
+});
+export type EditIssueDescriptionArgs = z.infer<typeof EditIssueDescriptionArgs>;
 
 export const AddCommentArgs = z.object({
   id: IdSchema,
@@ -185,6 +208,24 @@ function updateIssue(tx: Tx, args: UpdateIssueArgs): void {
   });
 }
 
+function editIssueDescription(tx: Tx, args: EditIssueDescriptionArgs): void {
+  const issue = tx.get("issue", args.id);
+  if (!issue || issue.deleted) return;
+  // Decode the existing description (transparently handles legacy plain text
+  // and absent values), apply the Y.Doc update, encode the new state back
+  // into the description string field. Because Y.Doc CRDTs are commutative,
+  // the order in which the server applies updates doesn't affect the final
+  // merged value.
+  const doc = decodeDocOrFromText(issue.description ?? "");
+  applyUpdateB64(doc, args.updateB64);
+  tx.put({
+    ...issue,
+    description: encodeDoc(doc),
+    updatedAt: tx.hints.now,
+    version: tx.hints.version,
+  });
+}
+
 function deleteIssue(tx: Tx, args: DeleteIssueArgs): void {
   const issue = tx.get("issue", args.id);
   if (!issue || issue.deleted) return;
@@ -248,6 +289,7 @@ export const mutators = {
   updateIssueStatus: entry(UpdateIssueStatusArgs, updateIssueStatus),
   moveIssue: entry(MoveIssueArgs, moveIssue),
   updateIssue: entry(UpdateIssueArgs, updateIssue),
+  editIssueDescription: entry(EditIssueDescriptionArgs, editIssueDescription),
   deleteIssue: entry(DeleteIssueArgs, deleteIssue),
   addComment: entry(AddCommentArgs, addComment),
   createLabel: entry(CreateLabelArgs, createLabel),

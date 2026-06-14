@@ -342,3 +342,72 @@ function snapshot(eng: Engine): unknown {
     .map((e: Entity) => ({ kind: e.kind, id: e.id, version: e.version, body: e }))
     .sort((a, b) => (a.kind + a.id).localeCompare(b.kind + b.id));
 }
+
+describe("Engine — per-field CRDT (M7c) for Issue.description", () => {
+  it("two clients editing the description concurrently converge to the same merged state", async () => {
+    const { applyUpdateB64, decodeDocOrFromText, diffUpdateB64, makeDoc, readBody, snapshotStateVector, Y_TEXT_FIELD } =
+      await import("@slipstream/protocol");
+    const server = new FakeServer();
+    const alice = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: server.asTransport(),
+    });
+    const bob = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: server.asTransport(),
+    });
+
+    // Alice creates the issue with an empty description (a fresh Y.Doc encoded).
+    const wsId = uuidv7();
+    const projId = uuidv7();
+    const issueId = uuidv7();
+    const emptyDescription = (() => {
+      const d = makeDoc();
+      return diffUpdateB64(d, snapshotStateVector(makeDoc()));
+    })();
+    void emptyDescription;
+    await alice.mutate("createWorkspace", { id: wsId, name: "Acme" });
+    await alice.mutate("createProject", { id: projId, workspaceId: wsId, name: "Slip", key: "SL" });
+    await alice.mutate("createIssue", {
+      id: issueId,
+      workspaceId: wsId,
+      projectId: projId,
+      title: "Doc-CRDT",
+      position: between(null, null),
+      description: "", // legacy plain-text seed; decodeDocOrFromText handles it
+    });
+    await alice.sync();
+    await bob.sync();
+
+    // Both clients independently decode and edit.
+    const aliceIssue = alice.get("issue", issueId)!;
+    const aliceDoc = decodeDocOrFromText(aliceIssue.description);
+    const aliceSV = snapshotStateVector(aliceDoc);
+    aliceDoc.getText(Y_TEXT_FIELD).insert(0, "Alice was here. ");
+    const aliceUpdate = diffUpdateB64(aliceDoc, aliceSV);
+
+    const bobIssue = bob.get("issue", issueId)!;
+    const bobDoc = decodeDocOrFromText(bobIssue.description);
+    const bobSV = snapshotStateVector(bobDoc);
+    bobDoc.getText(Y_TEXT_FIELD).insert(0, "Bob says hi. ");
+    const bobUpdate = diffUpdateB64(bobDoc, bobSV);
+
+    await alice.mutate("editIssueDescription", { id: issueId, updateB64: aliceUpdate });
+    await bob.mutate("editIssueDescription", { id: issueId, updateB64: bobUpdate });
+
+    // Drain — sync each twice so both ends apply both updates.
+    await alice.sync();
+    await bob.sync();
+    await alice.sync();
+    await bob.sync();
+
+    const aliceFinal = decodeDocOrFromText(alice.get("issue", issueId)!.description);
+    const bobFinal = decodeDocOrFromText(bob.get("issue", issueId)!.description);
+    const aliceText = readBody(aliceFinal);
+    const bobText = readBody(bobFinal);
+    expect(bobText).toBe(aliceText);
+    // Both contributions are present despite concurrent edits.
+    expect(aliceText).toContain("Alice was here.");
+    expect(aliceText).toContain("Bob says hi.");
+  });
+});
