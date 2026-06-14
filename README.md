@@ -3,7 +3,7 @@
 [![CI](https://github.com/hitenpatel/slipstream/actions/workflows/ci.yml/badge.svg)](https://github.com/hitenpatel/slipstream/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-6ea8ff.svg)](./LICENSE)
 [![coverage](https://codecov.io/gh/hitenpatel/slipstream/branch/main/graph/badge.svg)](https://codecov.io/gh/hitenpatel/slipstream)
-[![tests](https://img.shields.io/badge/tests-60_passing-3fbf6c.svg)](#testing)
+[![tests](https://img.shields.io/badge/tests-85_passing-3fbf6c.svg)](#testing)
 [![live demo](https://img.shields.io/badge/demo-tracker.hiten.dev-6ea8ff.svg)](https://tracker.hiten.dev)
 
 > **Local-first sync, built from scratch.**
@@ -51,7 +51,16 @@ When you open the live demo:
 - A **command palette** (`Cmd/Ctrl-K`) is a proper WAI-ARIA combobox: type "polish", `Enter`,
   open the issue; type "in progress polish", `Enter`, set the status.
 - **Presence** shows you which workspace peers are looking at what — avatars on each project
-  row, then in the issue detail header when someone opens the same overlay.
+  row, then in the issue detail header when someone opens the same overlay. The presence broker
+  is pluggable: in-process for single-instance deploys, **Redis-backed** when `REDIS_URL` is set
+  so multiple sync replicas share workspace presence + poke fan-out.
+- **Workspace invites** — generate a single-use 7-day link from the sidebar; anyone who opens
+  it signs up directly into your workspace. Pulls and pushes are workspace-scoped and
+  cookie-gated, so members of different workspaces stay properly isolated.
+- **CRDT-backed description**. `Issue.description` is a Yjs Y.Doc encoded into the existing
+  string field; concurrent edits across users / tabs merge deterministically. Every other field
+  stays under server-ordered mutators where the total-order story is correct. The ADR-001 future
+  extension, delivered in M7c.
 - Every state change posts a polite `aria-live` announcement: "Syncing changes…", "All changes
   synced. Version 42.", "You are offline. Changes will be saved locally and synced when you
   reconnect." Optimistic rows render a "pending" pill until the server stamps a real version.
@@ -137,6 +146,8 @@ the alternative had won.
 | **Fractional indexing for `position`** | Reordering an issue is a single field write — pick a string key between its new neighbours. No cascade, no rebalancing, conflict-friendly because moving issue A doesn't touch the rest of the column. | Integer positions need to renumber every neighbour on insert. Linked lists require multiple field writes per move. |
 | **Single global counter (`counters.global`, `$inc`-ed inside the push tx)** | One Mongo write produces a strict total order across every workspace, every client, every concurrent push. Two pushes both `$inc` the same document, Mongo detects the write conflict, `withTransaction` retries — the loser is serialised after the winner. | A per-workspace counter would scale better but break the global cookie. A timestamp-based ordering wouldn't survive clock skew. |
 | **Same mutator code, two execution sites** | Mutators in `packages/protocol/src/mutators.ts` take a `Tx` interface (`get`/`put`/`del`). The client implements `Tx` against an in-memory `MemoryView`; the server implements it against a Mongo session. The same function runs on both sides, so they can never drift. | Separate client/server logic guarantees they will drift; the brief specifically calls this out. |
+| **Yjs for the one field that needs it (`Issue.description`)** | Discrete fields (`status`, `priority`, `position`) get correct semantics from server-ordered mutators; CRDT would be overkill. Rich text needs concurrent-edit merging — Yjs's binary updates fit inside the existing string field as base64, the new `editIssueDescription` mutator decodes / applies / re-encodes, and the optimistic-then-confirmed engine path works unchanged. See ADR-008. | Automerge is comparable; Yjs has smaller binary updates and better textarea ergonomics. Full-CRDT for every field would add ~50 KiB minified for no semantic benefit on discrete fields. |
+| **Redis-backed presence broker (opt-in via `REDIS_URL`)** | Horizontal scale-out without changing the protocol. `PresenceBroker` is an interface; the Redis impl uses a workspace-scoped hash + pub/sub so multiple sync instances share workspace presence and pokes. The in-process default still serves single-instance deploys. See ADR-006. | Sharded process (each instance owns a slice) avoids Redis but requires consistent-hashing on the upgrade and degrades to "a slice goes dark" on failure. Mongo-backed presence is slower and incurs writes per cursor move. |
 
 ### Local-first primitives
 
@@ -224,22 +235,17 @@ slipstream/
 
 ## Testing
 
-60 tests across the stack, 20/20 turbo tasks per CI run. CI runs each
+85 tests across the stack, 19/19 turbo tasks per CI run. CI runs each
 workspace's suite with `--coverage` and uploads one lcov-per-workspace to
 Codecov, so the per-package contribution is visible separately under the
 flags `protocol`, `client`, `sync`, `web`.
 
-| Package | Tests | Coverage (Vitest v8) | Highlights |
-| --- | --- | --- | --- |
-| `packages/protocol` | 13 | ~73% | uuidv7 monotonicity; fractional indexing bounds + 200-round insertion; mutator semantics + idempotency |
-| `apps/sync` | 20 | ~86% | push: monotonic versions, idempotent replay, gap break + resume, rollback on throw, total order under concurrency; pull: empty-when-current, soft-delete emission; socket: auth gate, hello, register/deregister, broker fan-out, presence broadcast |
-| `packages/client` | 16 | ~73% | optimistic apply, rebase to confirmed version, offline survival; 2- and 3-client randomised-interleaving convergence; poke channel reconnect backoff curve; presence dispatch + republish-on-reconnect |
-| `apps/web` | 11 | 100%¹ | palette substring scoring (prefix vs mid-string ranking, multi-token AND, command tie-break); palette combobox markup axe-clean; KeepAlive contract (both children mounted, inactive frame inert + aria-hidden) |
-
-¹ The web percentage is computed over the files explicitly under unit test
-(`palette-search.ts`, `keep-alive.tsx`). The rest of the Next.js UI is covered
-end-to-end by the live demo and the (planned) Playwright keyboard-only flows
-in M7 — measuring it as unit-coverage would be misleading.
+| Package | Tests | Highlights |
+| --- | --- | --- |
+| `packages/protocol` | 22 | uuidv7 monotonicity; fractional indexing bounds + 200-round insertion; mutator semantics + idempotency; **Yjs Y.Doc CRDT convergence** across two and three clients in random update orders |
+| `apps/sync` | 35 | push: monotonic versions, idempotent replay, gap break + resume, rollback on throw, total order under concurrency; pull: empty-when-current, soft-delete emission, **workspace-scoped isolation**; socket: auth gate, hello, register/deregister, broker fan-out, presence broadcast; **invite flow**: signup with valid/used/expired/unknown token; **Redis-backed broker**: cross-instance presence + poke fan-out via ioredis-mock (6 tests) |
+| `packages/client` | 17 | optimistic apply, rebase to confirmed version, offline survival; 2- and 3-client randomised-interleaving convergence; poke channel reconnect backoff curve; presence dispatch + republish-on-reconnect; **end-to-end CRDT convergence** for description |
+| `apps/web` | 11 | palette substring scoring (prefix vs mid-string ranking, multi-token AND, command tie-break); palette combobox markup axe-clean; KeepAlive contract (both children mounted, inactive frame inert + aria-hidden) |
 
 Run locally with `pnpm turbo run typecheck lint test build`, or
 `pnpm turbo run test:coverage` to produce lcov reports under

@@ -313,6 +313,57 @@ The corresponding state-layer change (§0.1):
 written by the `onPresence` channel handler, `focus` is mirrored by `engine.publishFocus`. The
 `PresenceAvatars` component reads `presence` directly and filters by the current entity.
 
+### 0.7 Per-field CRDT path for `Issue.description` (M7c)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Alex
+  actor Sam
+  participant A as Alex's detail dialog
+  participant EA as Alex's engine
+  participant Sync as sync server<br/>/api/push, /api/pull
+  participant ES as Sam's engine
+  participant S as Sam's detail dialog
+
+  Note over A: opens issue<br/>useDescriptionDoc decodes serverDescription<br/>into a local Y.Doc
+
+  Alex->>A: types into description textarea
+  A->>A: snapshot Y.Doc state vector<br/>applyTextDiff (delete + insert)<br/>diffUpdateB64 → binary update
+  A->>EA: engine.mutate("editIssueDescription", {id, updateB64})
+  EA->>EA: replay mutator on serverBase → optimistic view
+  EA-->>A: textarea re-renders from Y.Doc body
+
+  EA->>Sync: POST /api/push (transactional)
+  Sync->>Sync: editIssueDescription runs:<br/>decodeDocOrFromText(description)<br/>applyUpdateB64(doc, updateB64)<br/>encodeDoc(doc) → new description
+  Sync-->>EA: { lastMutationID, cookie }
+  Sync->>Sync: broker.pokeAll
+
+  Note over Sam,S: Sam edits at the same moment
+
+  Sam->>S: types into description textarea
+  S->>ES: engine.mutate("editIssueDescription", ...)
+  ES->>Sync: POST /api/push
+  Sync->>Sync: same mutator, applies Sam's update<br/>on top of Alex's merged state
+  Sync-->>ES: { lastMutationID, cookie }
+
+  Sync-->>EA: WS poke
+  EA->>Sync: POST /api/pull
+  Sync-->>EA: patch with merged description
+  EA->>EA: applyPatch → serverBase advances<br/>useDescriptionDoc applies new state into local Y.Doc<br/>(Yjs dedupes; our own op is already there)
+  EA-->>A: textarea re-renders<br/>shows BOTH contributions
+
+  Sync-->>ES: WS poke
+  ES->>Sync: POST /api/pull
+  Sync-->>ES: same merged patch
+  ES->>ES: applyPatch
+  ES-->>S: textarea re-renders<br/>shows BOTH contributions
+```
+
+The diagram makes the key invariant visible: the **same mutator code** runs in both engines and on
+the server. Y.Doc CRDTs are commutative, so the order in which updates land in the transaction
+doesn't change the final merged state.
+
 ---
 
 ## 1. Goals (frontend-specific)
@@ -584,42 +635,65 @@ The CSS Module rule about local-only selectors means global element styles
   scroll. Esc closes by clearing the param.
 - ✅ **`<Activity>`-preserved view switching + virtualisation** *shipped M6b* —
   see §9.
-- **Workspace permission enforcement on pull.** M6a closes the *transport*
-  side: the socket can't be opened anonymously. The *data* side still trusts
-  the cookie — `applyPush` and `pull` operate on the workspace the session
-  declares. Future M7 work: derive the workspace scope from the session inside
-  the handler and reject any mutation whose entities don't belong to it. This
-  is a defence-in-depth item; the current behaviour matches the brief.
-- **Multiple workspaces per user.** The data model already supports it via the
-  `Membership` entity. UI work needed: a workspace picker, a `currentWorkspaceId`
-  in the session, scoped IDB databases. Out of MVP.
-- **Cursors on the board.** Add a `cursor: {x, y}` field to `PresenceFocus`,
-  throttle publishes, render per-user cursors on the board with the
-  deterministic colour-from-userId already used by the avatar chips. The
-  mechanism is the same as M6a.
-- **CSP / security headers at the web container level.** The existing
-  Traefik pipeline adds `security-headers@file` which is enough for M6.
-  Tightening the CSP for the client island is a future M7 item once the
-  inline scripts from Next are stable.
-- **Service worker for true offline.** The engine already opens instantly
-  offline because IDB is the source of truth, but the *shell* (HTML/JS/CSS)
-  still needs a network for the first hit. A small SW caching the static
-  shell would close the loop. Deferred (M7+).
-- **Horizontal scale-out of the sync server.** Per ADR-006, presence is
-  in-process. Multi-instance presence needs a Redis pub/sub or NATS in front
-  of the broker. Explicitly out of MVP per the brief.
+- ✅ **Workspace permission enforcement on pull** *shipped M7b*. Both
+  `/api/pull` and `/api/push` are cookie-session-gated and workspace-scoped;
+  the route handlers derive `workspaceId` from the session, not the body.
+  Mutations whose `args.workspaceId` doesn't match are rejected with
+  `HTTP 403`. See ADR-007.
+- ✅ **Multi-user in one workspace** *shipped M7b*. The invite flow at
+  `/join/<token>` lets anyone with the link sign up directly into the
+  inviter's workspace. Tokens are 256-bit, single-use, 7-day TTL via a Mongo
+  TTL index. See ADR-007.
+- ✅ **Per-field CRDT for description** *shipped M7c*. The ADR-001 "future
+  extension" — Yjs encoded into the existing string field, applied by a new
+  `editIssueDescription` mutator that runs on both sides. Three-client
+  randomised convergence test in the protocol suite, plus a full end-to-end
+  engine convergence test. See ADR-008.
+- ✅ **Horizontal scale-out of the sync server** *shipped M7d*. Presence
+  is pluggable via `REDIS_URL`; `RedisPresenceBroker` uses a Redis hash plus
+  pub/sub so multiple sync instances share workspace presence and pokes.
+  Six cross-instance simulation tests via `ioredis-mock`. See ADR-006.
+- ✅ **Real coverage in CI** *shipped M7a*. Codecov badge with per-workspace
+  flags (`protocol`, `client`, `sync`, `web`); the README testing table now
+  shows live numbers.
+- **Multiple workspaces per user** *still open*. The data model already
+  supports it via the `Membership` entity. UI work needed: a workspace
+  picker, a `currentWorkspaceId` in the session, scoped IDB databases. M7b
+  takes the signup-only redemption path explicitly so this stays a future PR.
+- **Cursors on the board** *still open*. Add a `cursor: {x, y}` field to
+  `PresenceFocus`, throttle publishes, render per-user cursors on the board
+  with the deterministic colour-from-userId already used by the avatar chips.
+  The mechanism is the same as M6a.
+- **CSP / security headers at the web container level** *still open*. The
+  existing Traefik pipeline adds `security-headers@file` which is enough for
+  the current scope; tightening the CSP for the client island is a future
+  ticket once the inline scripts from Next are stable.
+- **Service worker for true offline** *still open*. The engine already opens
+  instantly offline because IDB is the source of truth, but the *shell*
+  (HTML/JS/CSS) still needs a network for the first hit. A small SW caching
+  the static shell would close the loop.
+- **Magic-link auth** *still open*. Replaces the password form with an email
+  token. Pairs naturally with the invite flow (the email becomes the
+  invite). Needs an SMTP / Resend dependency.
+- **Workspace switcher UI** *still open*. Needed once a user can be in more
+  than one workspace.
 
 ## 11. Milestone slot-in
 
-The MVP is now complete. PR-per-milestone, all merged onto `main`:
+The MVP plus the M7 arc of Phase-2 deliveries are all on `main`. PR-per-milestone:
 
-- ✅ **M4a** — auth, app gate, EngineProvider, "you're in" page (PR #4).
-- ✅ **M4b** — sidebar shell, list view, create issue, status, delete (PR #5).
-- ✅ **M4c** — board view, issue detail panel, comments, labels, filters (PR #7).
-- ✅ **M4d** — command palette, sync-status live region (PR #8).
-- ✅ **M5** — accessibility hardening: keyboard DnD with announcements,
-  jsx-a11y, forced-colors, axe-core (PR #9).
-- ✅ **M6a** — auth-gated WebSocket + workspace-scoped presence (PR #10).
-- ✅ **M6b** — `<KeepAlive>` view switching + virtualised list (PR #11).
-- ✅ **M6c** — docs polish: ADRs filled, ARCHITECTURE.md and FRONTEND.md
-  refreshed, README finished as the front-door (this PR).
+| Milestone | What | PR |
+|---|---|---|
+| **M4a** | auth, app gate, EngineProvider, "you're in" page | [#4](https://github.com/hitenpatel/slipstream/pull/4) |
+| **M4b** | sidebar shell, list view, create issue, status, delete | [#5](https://github.com/hitenpatel/slipstream/pull/5) |
+| **M4c** | board view, issue detail panel, comments, labels, filters | [#7](https://github.com/hitenpatel/slipstream/pull/7) |
+| **M4d** | command palette, sync-status live region | [#8](https://github.com/hitenpatel/slipstream/pull/8) |
+| **M5** | accessibility hardening: keyboard DnD with announcements, jsx-a11y, forced-colors, axe-core | [#9](https://github.com/hitenpatel/slipstream/pull/9) |
+| **M6a** | auth-gated WebSocket + workspace-scoped presence | [#10](https://github.com/hitenpatel/slipstream/pull/10) |
+| **M6b** | `<KeepAlive>` view switching + virtualised list | [#11](https://github.com/hitenpatel/slipstream/pull/11) |
+| **M6c** | ADRs filled, ARCHITECTURE/FRONTEND refreshed, README finished | [#12](https://github.com/hitenpatel/slipstream/pull/12) |
+| **M7a** | real coverage badge (Vitest v8 + Codecov + per-workspace flags) | [#16](https://github.com/hitenpatel/slipstream/pull/16) |
+| **M7b** | workspace invite flow + workspace-scoped pull/push | [#17](https://github.com/hitenpatel/slipstream/pull/17) |
+| **M7c** | per-field CRDT for `Issue.description` (Yjs) | [#18](https://github.com/hitenpatel/slipstream/pull/18) |
+| **M7d** | Redis-backed presence + poke for horizontal scale-out | [#19](https://github.com/hitenpatel/slipstream/pull/19) |
+| **M7e** | this PR — ADR-007/008/009, ARCHITECTURE refreshed, README refreshed | this PR |
