@@ -40,6 +40,9 @@ services:
       interval: 5s
       start_period: 30s
       retries: 20
+    labels:
+      - sablier.enable=true
+      - sablier.group=slipstream
 
   # Optional Redis sidecar for cross-instance presence + poke fan-out (M7d).
   # Single-instance deploys can leave REDIS_URL unset and skip this service.
@@ -82,7 +85,10 @@ services:
       - traefik.http.routers.slipstream-sync.entryPoints=web-secure
       - traefik.http.routers.slipstream-sync.tls=true
       - traefik.http.routers.slipstream-sync.tls.certresolver=myresolver
+      - traefik.http.routers.slipstream-sync.middlewares=sablier-slipstream@file
       - traefik.http.services.slipstream-sync.loadbalancer.server.port=8787
+      - sablier.enable=true
+      - sablier.group=slipstream
 
   web:
     build:
@@ -110,7 +116,10 @@ services:
       - traefik.http.routers.slipstream-web.entryPoints=web-secure
       - traefik.http.routers.slipstream-web.tls=true
       - traefik.http.routers.slipstream-web.tls.certresolver=myresolver
+      - traefik.http.routers.slipstream-web.middlewares=sablier-slipstream@file
       - traefik.http.services.slipstream-web.loadbalancer.server.port=3000
+      - sablier.enable=true
+      - sablier.group=slipstream
 
 networks:
   internal:
