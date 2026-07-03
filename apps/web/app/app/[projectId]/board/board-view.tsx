@@ -9,6 +9,7 @@ import {
   MouseSensor,
   TouchSensor,
   closestCenter,
+  useDroppable,
   useSensor,
   useSensors,
   type Announcements,
@@ -242,8 +243,13 @@ function Column({
   onOpen: (id: string) => void;
   onMove: (id: string, to: IssueStatus) => Promise<void>;
 }): React.JSX.Element {
+  // Registers the column itself as a drop target so cross-column drops
+  // work even when the destination column is empty (previously `over` was
+  // null on empty columns because only cards were droppables).
+  const { setNodeRef } = useDroppable({ id: status });
   return (
     <section
+      ref={setNodeRef}
       className={styles.column}
       aria-labelledby={`col-h-${status}`}
       data-droppable-id={status}
@@ -305,43 +311,47 @@ function SortableCard({
 
   const optimistic = issue.version === 0;
 
-  // Drag is scoped to a dedicated left-edge handle so the rest of the card
-  // stays free for tapping (open) and for the surrounding scroll containers
-  // (column vertical scroll, board horizontal scroll) to receive touch. The
-  // per-card status <select> is the mobile fallback: cross-column drags on
-  // touch are unreliable even with a handle, so users get a native alternative.
+  // Whole card is the drag surface — that's what desktop users reach for and
+  // dnd-kit's MouseSensor with distance: 5 keeps normal clicks working. A
+  // small decorative grip glyph on the left signals "draggable". On touch,
+  // touch-action: manipulation lets scroll gestures win by default; a long
+  // press activates drag via the TouchSensor delay. The per-card status
+  // <select> stays as the reliable mobile fallback for cross-column moves.
   return (
     <li ref={setNodeRef} style={style}>
       <article
         className={styles.card}
         data-optimistic={optimistic ? "true" : "false"}
         data-dragging={isDragging ? "true" : "false"}
+        {...attributes}
+        {...listeners}
+        aria-roledescription="Draggable issue card"
+        aria-label={`${issue.title}, ${STATUS_LABEL[issue.status]}. Press space to drag.`}
       >
-        <button
-          type="button"
-          className={styles.dragHandle}
-          {...attributes}
-          {...listeners}
-          aria-roledescription="Draggable"
-          aria-label={`Drag ${issue.title}. Press space to pick up.`}
-        >
-          <span aria-hidden="true" className={styles.gripDots}>
-            {/* 6-dot grip glyph */}
-            <svg width="10" height="16" viewBox="0 0 10 16" focusable="false">
-              <circle cx="2" cy="3" r="1.2" fill="currentColor" />
-              <circle cx="8" cy="3" r="1.2" fill="currentColor" />
-              <circle cx="2" cy="8" r="1.2" fill="currentColor" />
-              <circle cx="8" cy="8" r="1.2" fill="currentColor" />
-              <circle cx="2" cy="13" r="1.2" fill="currentColor" />
-              <circle cx="8" cy="13" r="1.2" fill="currentColor" />
-            </svg>
-          </span>
-        </button>
+        <span aria-hidden="true" className={styles.dragHandle}>
+          <svg width="10" height="16" viewBox="0 0 10 16" focusable="false">
+            <circle cx="2" cy="3" r="1.2" fill="currentColor" />
+            <circle cx="8" cy="3" r="1.2" fill="currentColor" />
+            <circle cx="2" cy="8" r="1.2" fill="currentColor" />
+            <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+            <circle cx="2" cy="13" r="1.2" fill="currentColor" />
+            <circle cx="8" cy="13" r="1.2" fill="currentColor" />
+          </svg>
+        </span>
         <div className={styles.cardBody}>
           <button
             type="button"
             className={styles.openButton}
-            onClick={() => onOpen(issue.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(issue.id);
+            }}
+            // Space/Enter on the focused button opens the card; without
+            // stopping that, dnd-kit's KeyboardSensor would pick it up as a
+            // drag activation instead. Mouse events are left to bubble so
+            // MouseSensor's distance-based activation can start a drag when
+            // the user pointer-drags the title.
+            onKeyDown={(e) => e.stopPropagation()}
             aria-label={`Open ${issue.title}`}
           >
             <h3 className={styles.cardTitle}>{issue.title}</h3>
@@ -354,6 +364,8 @@ function SortableCard({
               <select
                 className={styles.statusSelect}
                 value={issue.status}
+                onMouseDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
                 onChange={(e) => {
                   void onMove(issue.id, e.target.value as IssueStatus);
                 }}
