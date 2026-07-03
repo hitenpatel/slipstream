@@ -1,42 +1,199 @@
-/* Design tokens, exposed as CSS custom properties so any layer can consume them.
-   Full token set lands with the UI primitives in M4/M5. */
+/* Slipstream visual system — "engineered minimalism, one signal accent".
+   Neutrals do the structural work in twelve near-black cool steps. Flux (a-4)
+   is the only saturated colour on screen; it marks the live edge of
+   interaction and nothing else. Type carries the hierarchy: Space Grotesk on
+   display, Space Mono on IDs and priorities, JetBrains Mono on inline code,
+   system stack for body so a local-first app never blocks first paint on a
+   web font. */
 
 @layer tokens {
   :root {
-    --color-bg: #0b0d10;
-    --color-surface: #14171c;
-    --color-surface-2: #1c2027;
-    --color-text: #e6e8eb;
-    --color-text-muted: #9aa3ad;
-    --color-accent: #6ea8ff;
-    --color-focus-ring: #6ea8ff;
-    --color-border: #2a2f37;
+    /* Neutral ramp — n-0 is the app background, n-11 the highest text. */
+    --n-0: #0a0c0f;
+    --n-1: #0f1217;
+    --n-2: #14181e;
+    --n-3: #1a1f27;
+    --n-4: #222833;
+    --n-5: #2b323d;
+    --n-6: #3a424f;
+    --n-7: #5b6472;
+    --n-8: #8a94a3;
+    --n-9: #b9c1cc;
+    --n-10: #e8ebef;
+    --n-11: #f7f9fb;
 
-    --space-1: 4px;
-    --space-2: 8px;
-    --space-3: 12px;
-    --space-4: 16px;
-    --space-6: 24px;
-    --space-8: 32px;
+    /* Flux — the sync current, made visible. Only saturated colour on screen. */
+    --a-1: #0d2a2b;
+    --a-2: #124f4e;
+    --a-3: #1f9c93;
+    --a-4: #34d6c8;
+    --a-5: #7cf0e4;
+    --accent-ink: #052220;
 
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
+    /* Semantic status. Colour is only ever the second signal — shape is first. */
+    --st-backlog-fg: #9aa3ad;
+    --st-backlog-bg: #191d24;
+    --st-todo-fg: #a7b4ff;
+    --st-todo-bg: #191d33;
+    --st-prog-fg: #f4c65a;
+    --st-prog-bg: #2a2410;
+    --st-done-fg: #5fd18b;
+    --st-done-bg: #0f2419;
+    --st-cancel-fg: #f28a9a;
+    --st-cancel-bg: #2a1418;
 
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
+    /* Diff colours (borrowed by the "pending" / optimistic hint). */
+    --diff-add: #0f2419;
+    --diff-add-fg: #5fd18b;
+    --diff-del: #2a1418;
+    --diff-del-fg: #f28a9a;
 
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+    /* Semantic aliases — components consume these, never the raw ramp. */
+    --bg: var(--n-0);
+    --sunken: var(--n-1);
+    --surface: var(--n-2);
+    --card: var(--n-3);
+    --hover: var(--n-4);
+    --border: var(--n-5);
+    --border-strong: var(--n-6);
+    --muted-2: var(--n-7);
+    --muted: var(--n-8);
+    --text-2: var(--n-9);
+    --text: var(--n-10);
+    --text-hi: var(--n-11);
+    --accent: var(--a-4);
+    --accent-hi: var(--a-5);
+    --accent-dim: var(--a-3);
+    --accent-chip: var(--a-1);
+    --focus: var(--a-4);
+
+    /* Type. next/font sets --font-display-loaded, --font-id-loaded and
+       --font-mono-loaded on <html>; fall back to the same face by name so
+       styling survives when Slipstream is embedded outside the Next.js
+       app (Storybook, tests). */
+    --font-display: var(--font-display-loaded), "Space Grotesk", system-ui, sans-serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: var(--font-mono-loaded), "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    /* Ticket IDs, priority badges — a slightly different mono to fingerprint them. */
+    --font-id: var(--font-id-loaded), "Space Mono", "JetBrains Mono", ui-monospace, monospace;
+
+    /* Type scale — size + line-height pairs. */
+    --fs-display: 44px;
+    --lh-display: 1.04;
+    --fs-h1: 32px;
+    --lh-h1: 1.1;
+    --fs-h2: 23px;
+    --lh-h2: 1.2;
+    --fs-h3: 17px;
+    --lh-h3: 1.3;
+    --fs-body: 15px;
+    --lh-body: 1.55;
+    --fs-small: 13px;
+    --lh-small: 1.45;
+    --fs-micro: 11px;
+    --lh-micro: 1.35;
+
+    /* Spacing scale (2/4/8/12/16/24/32/48/64). */
+    --sp-1: 2px;
+    --sp-2: 4px;
+    --sp-3: 8px;
+    --sp-4: 12px;
+    --sp-5: 16px;
+    --sp-6: 24px;
+    --sp-7: 32px;
+    --sp-8: 48px;
+    --sp-9: 64px;
+
+    /* Radii. */
+    --r-1: 4px;
+    --r-2: 6px;
+    --r-3: 10px;
+    --r-4: 14px;
+    --r-full: 999px;
+
+    /* Motion — three durations, three easings. Everything longer is wrong. */
+    --dur-1: 120ms;
+    --dur-2: 180ms;
+    --dur-3: 260ms;
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-drag: cubic-bezier(0.34, 1.4, 0.5, 1);
+
+    /* Three honest elevations, plus the flux focus ring. */
+    --e-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --e-2: 0 10px 28px -8px rgba(0, 0, 0, 0.6);
+    --e-3: 0 28px 68px -12px rgba(0, 0, 0, 0.7);
+    --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
+
+    /* Grid background for tech-feel surfaces (landing, cold start). */
+    --grid: linear-gradient(color-mix(in srgb, var(--border) 45%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--border) 45%, transparent) 1px, transparent 1px);
+
+    /* Back-compat aliases — the app started with a smaller token set. Kept as
+       aliases so existing CSS modules using `--color-*`, `--space-*`,
+       `--radius-*` and `--shadow-1` still render on the new palette without a
+       repo-wide search-and-replace. New styling should use the tokens above. */
+    --color-bg: var(--bg);
+    --color-surface: var(--surface);
+    --color-surface-2: var(--sunken);
+    --color-text: var(--text);
+    --color-text-muted: var(--muted);
+    --color-accent: var(--accent-dim);
+    --color-focus-ring: var(--focus);
+    --color-border: var(--border);
+    --space-1: var(--sp-2);
+    --space-2: var(--sp-3);
+    --space-3: var(--sp-4);
+    --space-4: var(--sp-5);
+    --space-6: var(--sp-6);
+    --space-8: var(--sp-7);
+    --radius-sm: var(--r-2);
+    --radius-md: var(--r-3);
+    --radius-lg: var(--r-4);
+    --shadow-1: var(--e-1);
   }
 
-  @media (prefers-color-scheme: light) {
-    :root {
-      --color-bg: #fafbfc;
-      --color-surface: #ffffff;
-      --color-surface-2: #f3f5f8;
-      --color-text: #14171c;
-      --color-text-muted: #5d6770;
-      --color-border: #d8dde3;
-    }
+  /* Light mode is an explicit opt-in — engineered minimalism reads darkest.
+     A toggle sets [data-theme="light"] on <html>; users who prefer light
+     system-wide but haven't toggled here still get dark by default. */
+  [data-theme="light"] {
+    --n-0: #f6f8fa;
+      --n-1: #eef1f5;
+      --n-2: #ffffff;
+      --n-3: #ffffff;
+      --n-4: #f0f3f7;
+      --n-5: #e2e7ee;
+      --n-6: #cdd5df;
+      --n-7: #98a2b0;
+      --n-8: #68727f;
+      --n-9: #3d4652;
+      --n-10: #161b22;
+      --n-11: #0a0c0f;
+
+      --a-1: #dbf5f1;
+      --a-3: #0e8d84;
+      --a-4: #0fb3a6;
+      --a-5: #0e8d84;
+      --accent-ink: #ffffff;
+
+      --st-backlog-bg: #eef1f5;
+      --st-backlog-fg: #68727f;
+      --st-todo-bg: #eaeeff;
+      --st-todo-fg: #4b5bd6;
+      --st-prog-bg: #fbf1d8;
+      --st-prog-fg: #9a6a08;
+      --st-done-bg: #e2f5ea;
+      --st-done-fg: #177a48;
+      --st-cancel-bg: #fbe6ea;
+      --st-cancel-fg: #c23a52;
+
+      --diff-add: #e2f5ea;
+      --diff-add-fg: #177a48;
+      --diff-del: #fbe6ea;
+      --diff-del-fg: #c23a52;
+
+      --e-1: 0 1px 2px rgba(20, 30, 50, 0.08);
+      --e-2: 0 10px 28px -10px rgba(20, 30, 50, 0.18);
+      --e-3: 0 28px 68px -14px rgba(20, 30, 50, 0.22);
   }
 }
