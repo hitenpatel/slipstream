@@ -18,30 +18,37 @@
     color-scheme: dark light;
   }
   body {
-    background: var(--color-bg);
-    color: var(--color-text);
+    background: var(--bg);
+    color: var(--text);
     font-family: var(--font-sans);
-    line-height: 1.5;
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
     -webkit-font-smoothing: antialiased;
   }
+  /* Flux focus ring: 2px offset ring in the accent, never suppressed.
+     `--ring` doubles-up an inner bg-coloured ring so the accent stays
+     visible against every surface. */
   :focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 2px;
-    border-radius: var(--radius-sm);
+    outline: none;
+    box-shadow: var(--ring);
+    border-radius: var(--r-2);
   }
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }
-  /* Forced-colors mode: replace tokenised focus + accent indicators with
-     system colours so high-contrast users still see focus and selection. */
+  /* Forced-colors mode: replace flux focus with the system Highlight so
+     high-contrast users still see focus. */
   @media (forced-colors: active) {
     :focus-visible {
-      outline-color: Highlight;
+      box-shadow: none;
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
     }
   }
 }

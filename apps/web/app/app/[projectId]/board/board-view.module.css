@@ -1,182 +1,362 @@
+/* Board — dense, quiet, one signal accent. Structure lives in the neutral
+   ramp; flux only marks the live edge (hover, focus, primary action). */
+
 .board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(260px, 1fr);
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-6) var(--space-6);
+  grid-auto-columns: 244px;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-6) var(--sp-7);
   overflow-x: auto;
   scroll-snap-type: x proximity;
   min-height: calc(100dvh - 168px);
+  background: var(--bg);
 }
 
 .column {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  scroll-snap-align: start;
   display: grid;
   grid-template-rows: auto 1fr;
-  min-width: 260px;
+  gap: var(--sp-4);
+  scroll-snap-align: start;
+  min-width: 244px;
 }
 
 .colHeader {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
+  gap: var(--sp-3);
+  padding: 0 2px;
 }
+
+/* Status shape lives on the column header — dashed for backlog, ring for
+   todo, conic-gradient for in-progress, filled for done, X for cancelled.
+   Shape carries the meaning; colour is the second signal. */
+.statusShape {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.column[data-status="backlog"] .statusShape {
+  border: 1.5px dashed var(--st-backlog-fg);
+}
+
+.column[data-status="todo"] .statusShape {
+  border: 1.5px solid var(--st-todo-fg);
+}
+
+.column[data-status="in_progress"] .statusShape {
+  background: conic-gradient(var(--st-prog-fg) 55%, transparent 0);
+  border: 1.5px solid var(--st-prog-fg);
+}
+
+.column[data-status="done"] .statusShape {
+  background: var(--st-done-fg);
+}
+
+.column[data-status="cancelled"] .statusShape {
+  border: 1.5px solid var(--st-cancel-fg);
+  position: relative;
+}
+
+.column[data-status="cancelled"] .statusShape::before,
+.column[data-status="cancelled"] .statusShape::after {
+  content: "";
+  position: absolute;
+  inset: 45% 15%;
+  border-top: 1.5px solid var(--st-cancel-fg);
+  transform-origin: center;
+}
+.column[data-status="cancelled"] .statusShape::before { transform: rotate(45deg); }
+.column[data-status="cancelled"] .statusShape::after { transform: rotate(-45deg); }
 
 .colTitle {
   margin: 0;
-  font-size: 0.875rem;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-h3);
+  color: var(--text);
+  letter-spacing: -0.005em;
 }
 
 .colCount {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 1px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  padding: 1px 7px;
+}
+
+.column[data-status="in_progress"] .colCount {
+  color: var(--st-prog-fg);
+  background: var(--st-prog-bg);
+  border-color: color-mix(in srgb, var(--st-prog-fg) 30%, transparent);
 }
 
 .cards {
   list-style: none;
-  padding: var(--space-3);
+  padding: 0;
   margin: 0;
   display: grid;
-  gap: var(--space-2);
-  overflow-y: auto;
+  gap: var(--sp-4);
+  align-content: start;
+  min-height: 96px;
 }
 
+/* Empty-column dropzone — dashed, muted, but real. dnd-kit registers the
+   whole column as a droppable so this catches cross-column drops. */
 .empty {
-  padding: var(--space-3);
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
+  min-height: 96px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-2);
+  font-size: var(--fs-small);
+  transition: border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
+
+.column[data-over="true"] .empty {
+  border-color: var(--accent);
+  color: var(--accent-hi);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* Card ------------------------------------------------------------------- */
 
 .card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: stretch;
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) 16px;
   cursor: grab;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-  overflow: hidden;
-  /* touch-action: manipulation lets the browser own scroll gestures on touch
-     (column vertical scroll, board horizontal scroll) while still letting the
-     TouchSensor's long-press-then-move activation reach us. `none` here would
-     make the whole card block scroll, which was the M8a bug. */
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
   touch-action: manipulation;
 }
 
 .card:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+  border-color: var(--accent);
+  box-shadow: var(--e-2);
+  transform: translateY(-1px);
+}
+
+.card:hover .grip {
+  opacity: 1;
 }
 
 .card:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .card[data-optimistic="true"] {
-  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 .card[data-dragging="true"] {
   cursor: grabbing;
+  opacity: 0.3;
 }
 
-/* Purely a visual "this is draggable" affordance on the left edge — the
-   actual dnd-kit listeners live on the whole <article> so users can grab
-   the card anywhere. */
-.dragHandle {
-  flex: 0 0 auto;
-  width: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-  background: var(--color-surface-2);
-  border-right: 1px solid var(--color-border);
-  -webkit-user-select: none;
-  user-select: none;
+/* Left status edge — 3px rounded bar, coloured by issue status. This is
+   what makes the board legible at a glance without leaning on column
+   position or headings. */
+.statusEdge {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: var(--r-full);
 }
 
-.cardBody {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-}
+.card[data-status="backlog"] .statusEdge { background: var(--st-backlog-fg); }
+.card[data-status="todo"] .statusEdge { background: var(--st-todo-fg); }
+.card[data-status="in_progress"] .statusEdge { background: var(--st-prog-fg); }
+.card[data-status="done"] .statusEdge { background: var(--st-done-fg); }
+.card[data-status="cancelled"] .statusEdge { background: var(--st-cancel-fg); }
 
-.cardDrag {
-  background: var(--color-bg);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3);
-  width: 240px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+/* Grip glyph, top-right. Faded until hover so it doesn't shout. */
+.grip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--muted-2);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
   pointer-events: none;
 }
 
 .openButton {
-  background: none;
-  border: 1px solid transparent;
-  text-align: left;
-  padding: 0;
+  display: block;
+  width: 100%;
+  padding: 0 14px 0 0;
   margin: 0;
-  font: inherit;
+  background: transparent;
+  border: 0;
   color: inherit;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.openButton:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-align: left;
+  cursor: text;
+  font: inherit;
 }
 
 .openButton:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
+  outline: none;
 }
 
 .cardTitle {
-  margin: 0;
-  font-size: 0.9375rem;
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-body);
   font-weight: 500;
+  line-height: 1.35;
+  color: var(--text);
   letter-spacing: -0.005em;
+}
+
+.card[data-status="done"] .cardTitle {
+  color: var(--text-2);
+  text-decoration: line-through;
+  text-decoration-color: var(--muted-2);
+}
+
+.card[data-status="done"] .cardMeta,
+.card[data-status="done"] .ticketId,
+.card[data-status="done"] .ticketId strong {
+  text-decoration: none;
+}
+
+.card[data-status="done"] {
+  opacity: 0.82;
 }
 
 .cardMeta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  min-width: 0;
   flex-wrap: wrap;
+  row-gap: var(--sp-2);
 }
 
-.optimistic {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-accent);
+.ticketId {
+  font-family: var(--font-id);
+  color: var(--muted-2);
+  letter-spacing: -0.03em;
 }
 
-.statusLabel {
-  margin-left: auto;
+.ticketId strong {
+  color: var(--text);
+  font-weight: 400;
 }
 
+.metaDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  flex: 0 0 auto;
+}
+
+/* Priority pill — P1 uses the warning colour on its own tinted bg to signal
+   urgency without shouting. Lower priorities are muted. */
+.priority {
+  font-family: var(--font-id);
+  font-weight: 700;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  padding: 0 5px;
+}
+
+.priority[data-level="urgent"],
+.priority[data-level="high"] {
+  color: var(--st-prog-fg);
+  background: var(--st-prog-bg);
+  border-color: color-mix(in srgb, var(--st-prog-fg) 25%, transparent);
+}
+
+.metaSpacer { flex: 1 1 auto; }
+
+.commentCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Assignee avatar — 18px gradient disc when assigned. */
+.avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+  flex: 0 0 auto;
+}
+
+.avatar[data-unassigned="true"] {
+  background: linear-gradient(135deg, var(--muted-2), var(--muted));
+}
+
+/* Dedicated 28x28 touch-safe drag handle — always visible, always reachable
+   on the smallest phone. Desktop can drag from anywhere on the card via
+   the article listeners; the handle is the guaranteed hit target. */
+.dragHandleTouch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: var(--r-2);
+  background: var(--hover);
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+  cursor: grab;
+  touch-action: none;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.dragHandleTouch:hover {
+  background: color-mix(in srgb, var(--accent) 15%, var(--hover));
+  color: var(--text);
+}
+
+/* Drag overlay — the card portalled out of the flow while dragging. */
+.cardDrag {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-3);
+  padding: var(--sp-4);
+  width: 244px;
+  box-shadow: var(--e-3);
+  transform: scale(1.02);
+  pointer-events: none;
+}
+
+.cardDragTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-body);
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  color: var(--text);
+}
+
+/* SR-only helper (used for the status-select label). */
 .srOnly {
   position: absolute;
   width: 1px;
@@ -189,37 +369,63 @@
   border: 0;
 }
 
+.statusLabel {
+  display: inline-flex;
+}
+
 .statusSelect {
   font: inherit;
-  font-size: 0.75rem;
-  background: var(--color-surface-2);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 2px 4px;
-  min-height: 28px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  padding: 1px 3px;
+  min-height: 22px;
+  max-width: 82px;
+  min-width: 0;
+}
+
+.statusSelect:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* Desktop has whole-card drag and keyboard drag — the 28×28 grab handle
+   would be redundant chrome. Hide it on pointer devices, keep it for
+   touch. The status select stays visible everywhere as an accessible
+   escape hatch and the primary path our e2e suite exercises. */
+@media (hover: hover) and (min-width: 720px) {
+  .dragHandleTouch { display: none; }
 }
 
 .statusSelect:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--ring);
 }
 
+/* Reduced motion — collapse all card transitions to instant. */
 @media (prefers-reduced-motion: reduce) {
-  .card { transition: none; }
+  .card,
+  .empty,
+  .grip {
+    transition: none;
+  }
+  .card:hover {
+    transform: none;
+  }
 }
 
-/* Forced-colors mode (Windows High Contrast, NVDA + Edge) — replace the
-   tokenised colours with system colours so the UI stays usable when the OS
-   overrides our palette. */
+/* Forced-colors — status carries by shape/label first; here we hard-anchor
+   borders and focus to system colours so the card still communicates. */
 @media (forced-colors: active) {
   .card { border-color: CanvasText; }
-  .card:focus-visible { outline-color: Highlight; }
-  .card[data-optimistic="true"],
   .card:hover { border-color: Highlight; }
   .cardDrag { border-color: Highlight; box-shadow: none; }
-  .dragHandle { border-right-color: CanvasText; color: CanvasText; }
-  .openButton:focus-visible { outline-color: Highlight; }
-  .statusSelect { border-color: CanvasText; }
-  .statusSelect:focus-visible { outline-color: Highlight; }
+  .statusEdge { background: CanvasText; }
+  .empty { border-color: CanvasText; }
+  .column[data-over="true"] .empty { border-color: Highlight; }
+  .dragHandleTouch { border-color: CanvasText; color: CanvasText; }
+  .statusSelect { border-color: CanvasText; color: CanvasText; }
 }

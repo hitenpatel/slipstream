@@ -37,13 +37,23 @@
   position: relative;
   z-index: 1;
   width: min(720px, 100%);
-  max-height: calc(100dvh - var(--space-8));
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 12px 60px rgba(0,0,0,0.45);
+  max-height: calc(100dvh - var(--sp-7));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-4);
+  box-shadow: var(--e-3);
   display: flex;
   flex-direction: column;
+  animation: dialogIn var(--dur-3) var(--ease-out);
+}
+
+@keyframes dialogIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog { animation: none; }
 }
 
 .body {
@@ -62,23 +72,27 @@
 .titleInput {
   flex: 1;
   font: inherit;
-  font-size: 1.25rem;
+  font-family: var(--font-display);
   font-weight: 600;
-  letter-spacing: -0.005em;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  letter-spacing: -0.01em;
   padding: 6px 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--color-text);
-  border-radius: var(--radius-sm);
+  color: var(--text);
+  border-radius: var(--r-2);
+  transition: border-color var(--dur-1) var(--ease-out);
 }
 
 .titleInput:hover {
-  border-color: var(--color-border);
+  border-color: var(--border);
 }
 
 .titleInput:focus-visible {
-  border-color: var(--color-accent);
   outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .close {
@@ -129,9 +143,11 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: 0.875rem;
-  letter-spacing: 0.01em;
-  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-dim);
 }
 
 .description {

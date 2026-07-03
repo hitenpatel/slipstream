@@ -28,19 +28,18 @@ import {
   between,
   type Issue,
   type IssueStatus,
-  type Label,
+  type IssuePriority,
 } from "@slipstream/protocol";
 import { useEngine } from "../../engine-provider";
 import { STATUS_LABEL, applyFilters, useFilters } from "../filters";
 import { useProjectData } from "../hooks";
-import { LabelDots } from "../label-dots";
 import styles from "./board-view.module.css";
 
 const COLUMN_ORDER: IssueStatus[] = ["backlog", "todo", "in_progress", "done", "cancelled"];
 
 export function BoardView({ projectId }: { projectId: string }): React.JSX.Element {
   const { engine } = useEngine();
-  const { project, issues, labels } = useProjectData(projectId);
+  const { project, issues } = useProjectData(projectId);
   const filters = useFilters();
   const router = useRouter();
   const params = useSearchParams();
@@ -213,7 +212,7 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
             key={status}
             status={status}
             issues={columns[status]}
-            labels={labels}
+            projectKey={project?.key ?? ""}
             onOpen={openIssue}
             onMove={moveTo}
           />
@@ -222,7 +221,7 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
       <DragOverlay>
         {activeIssue ? (
           <article className={styles.cardDrag} aria-hidden="true">
-            <h3 className={styles.cardTitle}>{activeIssue.title}</h3>
+            <h3 className={styles.cardDragTitle}>{activeIssue.title}</h3>
           </article>
         ) : null}
       </DragOverlay>
@@ -233,28 +232,29 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
 function Column({
   status,
   issues,
-  labels,
+  projectKey,
   onOpen,
   onMove,
 }: {
   status: IssueStatus;
   issues: Issue[];
-  labels: Label[];
+  projectKey: string;
   onOpen: (id: string) => void;
   onMove: (id: string, to: IssueStatus) => Promise<void>;
 }): React.JSX.Element {
   // Registers the column itself as a drop target so cross-column drops
-  // work even when the destination column is empty (previously `over` was
-  // null on empty columns because only cards were droppables).
-  const { setNodeRef } = useDroppable({ id: status });
+  // work even when the destination column is empty.
+  const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
     <section
       ref={setNodeRef}
       className={styles.column}
+      data-status={status}
+      data-over={isOver ? "true" : "false"}
       aria-labelledby={`col-h-${status}`}
-      data-droppable-id={status}
     >
       <header className={styles.colHeader}>
+        <span className={styles.statusShape} aria-hidden="true" />
         <h2 id={`col-h-${status}`} className={styles.colTitle}>
           {STATUS_LABEL[status]}
         </h2>
@@ -270,13 +270,13 @@ function Column({
       >
         <ul className={styles.cards} aria-label={`${STATUS_LABEL[status]} issues`}>
           {issues.length === 0 ? (
-            <li className={styles.empty}>No issues</li>
+            <li className={styles.empty}>Drop here</li>
           ) : (
             issues.map((issue) => (
               <SortableCard
                 key={issue.id}
                 issue={issue}
-                labels={labels}
+                projectKey={projectKey}
                 onOpen={onOpen}
                 onMove={onMove}
               />
@@ -290,12 +290,12 @@ function Column({
 
 function SortableCard({
   issue,
-  labels,
+  projectKey,
   onOpen,
   onMove,
 }: {
   issue: Issue;
-  labels: Label[];
+  projectKey: string;
   onOpen: (id: string) => void;
   onMove: (id: string, to: IssueStatus) => Promise<void>;
 }): React.JSX.Element {
@@ -306,80 +306,134 @@ function SortableCard({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
   } as React.CSSProperties;
 
   const optimistic = issue.version === 0;
+  const ticketId = issue.id.slice(-4).toUpperCase();
+  const priorityLevel = priorityLevelFor(issue.priority);
 
-  // Whole card is the drag surface — that's what desktop users reach for and
-  // dnd-kit's MouseSensor with distance: 5 keeps normal clicks working. A
-  // small decorative grip glyph on the left signals "draggable". On touch,
-  // touch-action: manipulation lets scroll gestures win by default; a long
-  // press activates drag via the TouchSensor delay. The per-card status
-  // <select> stays as the reliable mobile fallback for cross-column moves.
+  // Whole card is draggable via the article listeners so desktop users can
+  // grab from anywhere. On touch, `touch-action: manipulation` lets scroll
+  // gestures win by default; a 28x28 dedicated handle is provided in the
+  // meta row for reliable touch drag. The per-card status <select> stays as
+  // the mobile-friendly fallback for cross-column moves.
   return (
     <li ref={setNodeRef} style={style}>
       <article
         className={styles.card}
         data-optimistic={optimistic ? "true" : "false"}
         data-dragging={isDragging ? "true" : "false"}
+        data-status={issue.status}
         {...attributes}
         {...listeners}
         aria-roledescription="Draggable issue card"
         aria-label={`${issue.title}, ${STATUS_LABEL[issue.status]}. Press space to drag.`}
       >
-        <span aria-hidden="true" className={styles.dragHandle}>
-          <svg width="10" height="16" viewBox="0 0 10 16" focusable="false">
-            <circle cx="2" cy="3" r="1.2" fill="currentColor" />
-            <circle cx="8" cy="3" r="1.2" fill="currentColor" />
-            <circle cx="2" cy="8" r="1.2" fill="currentColor" />
-            <circle cx="8" cy="8" r="1.2" fill="currentColor" />
-            <circle cx="2" cy="13" r="1.2" fill="currentColor" />
-            <circle cx="8" cy="13" r="1.2" fill="currentColor" />
+        <span className={styles.statusEdge} aria-hidden="true" />
+        <span className={styles.grip} aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" focusable="false">
+            <circle cx="9" cy="6" r="1.6" />
+            <circle cx="15" cy="6" r="1.6" />
+            <circle cx="9" cy="12" r="1.6" />
+            <circle cx="15" cy="12" r="1.6" />
+            <circle cx="9" cy="18" r="1.6" />
+            <circle cx="15" cy="18" r="1.6" />
           </svg>
         </span>
-        <div className={styles.cardBody}>
+        <button
+          type="button"
+          className={styles.openButton}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(issue.id);
+          }}
+          // Space/Enter on the focused button opens the card; without
+          // stopping the keydown here dnd-kit's KeyboardSensor would pick it
+          // up as a drag activation instead. Mouse events are left to bubble
+          // so MouseSensor's distance activation can start a drag when the
+          // user pointer-drags the title.
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label={`Open ${issue.title}`}
+        >
+          <h3 className={styles.cardTitle}>{issue.title}</h3>
+        </button>
+        <div className={styles.cardMeta}>
+          <span className={styles.ticketId}>
+            {projectKey}-<strong>{ticketId}</strong>
+          </span>
+          {priorityLevel ? (
+            <>
+              <span className={styles.metaDot} aria-hidden="true" />
+              <span className={styles.priority} data-level={priorityLevel} aria-label={`Priority ${PRIORITY_SHORT[issue.priority]}`}>
+                {PRIORITY_SHORT[issue.priority]}
+              </span>
+            </>
+          ) : null}
+          {optimistic ? (
+            <>
+              <span className={styles.metaDot} aria-hidden="true" />
+              <span aria-label="Not yet confirmed by the server">pending</span>
+            </>
+          ) : null}
+          <span className={styles.metaSpacer} />
+          <span
+            className={styles.avatar}
+            data-unassigned={issue.assigneeId ? "false" : "true"}
+            aria-hidden="true"
+          />
+          {/* Touch users get a 28×28 hit target in the meta row. The article-
+              level listeners still fire when they long-press elsewhere on
+              the card. */}
           <button
             type="button"
-            className={styles.openButton}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen(issue.id);
-            }}
-            // Space/Enter on the focused button opens the card; without
-            // stopping that, dnd-kit's KeyboardSensor would pick it up as a
-            // drag activation instead. Mouse events are left to bubble so
-            // MouseSensor's distance-based activation can start a drag when
-            // the user pointer-drags the title.
+            className={styles.dragHandleTouch}
             onKeyDown={(e) => e.stopPropagation()}
-            aria-label={`Open ${issue.title}`}
+            aria-label={`Drag ${issue.title}`}
           >
-            <h3 className={styles.cardTitle}>{issue.title}</h3>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" focusable="false" aria-hidden="true">
+              <circle cx="9" cy="6" r="1.7" />
+              <circle cx="15" cy="6" r="1.7" />
+              <circle cx="9" cy="12" r="1.7" />
+              <circle cx="15" cy="12" r="1.7" />
+              <circle cx="9" cy="18" r="1.7" />
+              <circle cx="15" cy="18" r="1.7" />
+            </svg>
           </button>
-          <div className={styles.cardMeta}>
-            <LabelDots labelIds={issue.labelIds} labels={labels} />
-            {optimistic ? <span className={styles.optimistic}>pending</span> : null}
-            <label className={styles.statusLabel}>
-              <span className={styles.srOnly}>Move {issue.title} to</span>
-              <select
-                className={styles.statusSelect}
-                value={issue.status}
-                onMouseDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  void onMove(issue.id, e.target.value as IssueStatus);
-                }}
-              >
-                {COLUMN_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label className={styles.statusLabel}>
+            <span className={styles.srOnly}>Move {issue.title} to</span>
+            <select
+              className={styles.statusSelect}
+              value={issue.status}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                void onMove(issue.id, e.target.value as IssueStatus);
+              }}
+            >
+              {COLUMN_ORDER.map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </article>
     </li>
   );
+}
+
+const PRIORITY_SHORT: Record<IssuePriority, string> = {
+  0: "—",
+  1: "P4",
+  2: "P3",
+  3: "P2",
+  4: "P1",
+};
+
+function priorityLevelFor(p: IssuePriority): "high" | "urgent" | "normal" | null {
+  if (p === 4) return "urgent";
+  if (p === 3) return "high";
+  if (p === 0) return null;
+  return "normal";
 }
