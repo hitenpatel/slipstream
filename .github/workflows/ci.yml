@@ -48,6 +48,41 @@ jobs:
           flags: protocol,client,sync,web
           fail_ci_if_error: false
 
+  e2e:
+    name: playwright e2e
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: build web + sync
+        run: pnpm turbo run build --filter=@slipstream/web --filter=@slipstream/sync
+
+      - name: install playwright browsers
+        run: pnpm --filter @slipstream/web exec playwright install --with-deps chromium
+
+      - name: run e2e
+        run: pnpm --filter @slipstream/web test:e2e
+
+      - name: upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
   docker:
     name: docker image build smoke
     runs-on: ubuntu-latest
@@ -75,7 +110,7 @@ jobs:
   deploy:
     name: deploy to tracker.hiten.dev
     runs-on: ubuntu-latest
-    needs: [verify, docker]
+    needs: [verify, e2e, docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     # Deploy is owner-triggered. Wired to a Tailscale-reachable box via SSH;
     # owner provides DEPLOY_SSH_HOST, DEPLOY_SSH_USER, DEPLOY_SSH_KEY and the
