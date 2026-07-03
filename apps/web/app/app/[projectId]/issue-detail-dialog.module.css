@@ -29,6 +29,13 @@
 }
 
 .dialog {
+  /* Positioned + explicit z-index so it always sits above the fixed
+     scrimButton in the same stacking context. Without this, CSS stack
+     order puts positioned-with-z-index-auto (the scrim button) on top of
+     non-positioned in-flow content (the dialog), and the invisible button
+     swallows every click inside the dialog. */
+  position: relative;
+  z-index: 1;
   width: min(720px, 100%);
   max-height: calc(100dvh - var(--space-8));
   background: var(--color-surface);

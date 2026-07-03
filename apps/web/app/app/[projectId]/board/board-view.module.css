@@ -69,55 +69,47 @@
   border-radius: var(--radius-sm);
   display: flex;
   align-items: stretch;
+  cursor: grab;
   transition: border-color 120ms ease, box-shadow 120ms ease;
   overflow: hidden;
+  /* touch-action: manipulation lets the browser own scroll gestures on touch
+     (column vertical scroll, board horizontal scroll) while still letting the
+     TouchSensor's long-press-then-move activation reach us. `none` here would
+     make the whole card block scroll, which was the M8a bug. */
+  touch-action: manipulation;
 }
 
 .card:hover {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 .card[data-optimistic="true"] {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
 }
 
-/* Only the drag handle claims the pointer for dnd-kit — the rest of the card
-   stays interactive (tap to open) and lets the surrounding board/column
-   receive touch-scroll gestures. */
-.dragHandle {
-  flex: 0 0 auto;
-  width: 28px;
-  background: var(--color-surface-2);
-  border: none;
-  border-right: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  cursor: grab;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.dragHandle:hover {
-  background: color-mix(in srgb, var(--color-accent) 20%, var(--color-surface-2));
-  color: var(--color-text);
-}
-
-.dragHandle:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: -2px;
-}
-
-.card[data-dragging="true"] .dragHandle {
+.card[data-dragging="true"] {
   cursor: grabbing;
 }
 
-.gripDots {
-  display: inline-flex;
-  line-height: 0;
+/* Purely a visual "this is draggable" affordance on the left edge — the
+   actual dnd-kit listeners live on the whole <article> so users can grab
+   the card anywhere. */
+.dragHandle {
+  flex: 0 0 auto;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+  border-right: 1px solid var(--color-border);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .cardBody {
@@ -222,11 +214,11 @@
    overrides our palette. */
 @media (forced-colors: active) {
   .card { border-color: CanvasText; }
+  .card:focus-visible { outline-color: Highlight; }
   .card[data-optimistic="true"],
   .card:hover { border-color: Highlight; }
   .cardDrag { border-color: Highlight; box-shadow: none; }
   .dragHandle { border-right-color: CanvasText; color: CanvasText; }
-  .dragHandle:focus-visible { outline-color: Highlight; }
   .openButton:focus-visible { outline-color: Highlight; }
   .statusSelect { border-color: CanvasText; }
   .statusSelect:focus-visible { outline-color: Highlight; }
