@@ -2,10 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"]
   },
-  "include": ["src", "ioredis-mock.d.ts"]
+  "include": ["src"]
 }
