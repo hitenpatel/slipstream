@@ -73,6 +73,19 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
     router.replace(`?${next.toString()}`);
   }
 
+  // Mobile fallback for the drag gesture: the per-card status <select> calls
+  // this to append the issue to the destination column. Cross-column drags are
+  // fiddly on touch even with a dedicated handle, so a native select is the
+  // most reliable escape hatch.
+  async function moveTo(issueId: string, to: IssueStatus): Promise<void> {
+    const dest = columns[to];
+    if (dest[dest.length - 1]?.id === issueId) return;
+    const last = dest[dest.length - 1]?.position ?? null;
+    const position = between(last, null);
+    await engine.mutate("moveIssue", { id: issueId, status: to, position });
+    void engine.sync();
+  }
+
   function findColumnOf(issueId: string): IssueStatus | undefined {
     for (const status of COLUMN_ORDER) {
       if (columns[status].some((i) => i.id === issueId)) return status;
@@ -201,6 +214,7 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
             issues={columns[status]}
             labels={labels}
             onOpen={openIssue}
+            onMove={moveTo}
           />
         ))}
       </main>
@@ -220,11 +234,13 @@ function Column({
   issues,
   labels,
   onOpen,
+  onMove,
 }: {
   status: IssueStatus;
   issues: Issue[];
   labels: Label[];
   onOpen: (id: string) => void;
+  onMove: (id: string, to: IssueStatus) => Promise<void>;
 }): React.JSX.Element {
   return (
     <section
@@ -256,6 +272,7 @@ function Column({
                 issue={issue}
                 labels={labels}
                 onOpen={onOpen}
+                onMove={onMove}
               />
             ))
           )}
@@ -269,10 +286,12 @@ function SortableCard({
   issue,
   labels,
   onOpen,
+  onMove,
 }: {
   issue: Issue;
   labels: Label[];
   onOpen: (id: string) => void;
+  onMove: (id: string, to: IssueStatus) => Promise<void>;
 }): React.JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: issue.id,
@@ -286,37 +305,67 @@ function SortableCard({
 
   const optimistic = issue.version === 0;
 
-  // The card body is the drag handle — pressing Space/Enter on the focused
-  // card starts a drag; clicking opens the detail. We disambiguate by using
-  // a separate "Open" button inside the card for navigation, leaving the
-  // card surface itself as the draggable target.
+  // Drag is scoped to a dedicated left-edge handle so the rest of the card
+  // stays free for tapping (open) and for the surrounding scroll containers
+  // (column vertical scroll, board horizontal scroll) to receive touch. The
+  // per-card status <select> is the mobile fallback: cross-column drags on
+  // touch are unreliable even with a handle, so users get a native alternative.
   return (
     <li ref={setNodeRef} style={style}>
       <article
         className={styles.card}
         data-optimistic={optimistic ? "true" : "false"}
         data-dragging={isDragging ? "true" : "false"}
-        {...attributes}
-        {...listeners}
-        aria-roledescription="Draggable issue card"
-        aria-label={`${issue.title}, ${STATUS_LABEL[issue.status]}. Press space to drag.`}
       >
         <button
           type="button"
-          className={styles.openButton}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(issue.id);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          aria-label={`Open ${issue.title}`}
+          className={styles.dragHandle}
+          {...attributes}
+          {...listeners}
+          aria-roledescription="Draggable"
+          aria-label={`Drag ${issue.title}. Press space to pick up.`}
         >
-          <h3 className={styles.cardTitle}>{issue.title}</h3>
+          <span aria-hidden="true" className={styles.gripDots}>
+            {/* 6-dot grip glyph */}
+            <svg width="10" height="16" viewBox="0 0 10 16" focusable="false">
+              <circle cx="2" cy="3" r="1.2" fill="currentColor" />
+              <circle cx="8" cy="3" r="1.2" fill="currentColor" />
+              <circle cx="2" cy="8" r="1.2" fill="currentColor" />
+              <circle cx="8" cy="8" r="1.2" fill="currentColor" />
+              <circle cx="2" cy="13" r="1.2" fill="currentColor" />
+              <circle cx="8" cy="13" r="1.2" fill="currentColor" />
+            </svg>
+          </span>
         </button>
-        <div className={styles.cardMeta}>
-          <LabelDots labelIds={issue.labelIds} labels={labels} />
-          {optimistic ? <span className={styles.optimistic}>pending</span> : null}
+        <div className={styles.cardBody}>
+          <button
+            type="button"
+            className={styles.openButton}
+            onClick={() => onOpen(issue.id)}
+            aria-label={`Open ${issue.title}`}
+          >
+            <h3 className={styles.cardTitle}>{issue.title}</h3>
+          </button>
+          <div className={styles.cardMeta}>
+            <LabelDots labelIds={issue.labelIds} labels={labels} />
+            {optimistic ? <span className={styles.optimistic}>pending</span> : null}
+            <label className={styles.statusLabel}>
+              <span className={styles.srOnly}>Move {issue.title} to</span>
+              <select
+                className={styles.statusSelect}
+                value={issue.status}
+                onChange={(e) => {
+                  void onMove(issue.id, e.target.value as IssueStatus);
+                }}
+              >
+                {COLUMN_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       </article>
     </li>

@@ -67,29 +67,65 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: var(--space-3);
-  display: grid;
-  gap: var(--space-2);
-  cursor: grab;
+  display: flex;
+  align-items: stretch;
   transition: border-color 120ms ease, box-shadow 120ms ease;
-  touch-action: none;
+  overflow: hidden;
 }
 
 .card:hover {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
 }
 
-.card:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 1px;
-}
-
 .card[data-optimistic="true"] {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
 }
 
-.card[data-dragging="true"] {
+/* Only the drag handle claims the pointer for dnd-kit — the rest of the card
+   stays interactive (tap to open) and lets the surrounding board/column
+   receive touch-scroll gestures. */
+.dragHandle {
+  flex: 0 0 auto;
+  width: 28px;
+  background: var(--color-surface-2);
+  border: none;
+  border-right: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.dragHandle:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, var(--color-surface-2));
+  color: var(--color-text);
+}
+
+.dragHandle:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+.card[data-dragging="true"] .dragHandle {
   cursor: grabbing;
+}
+
+.gripDots {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.cardBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
 }
 
 .cardDrag {
@@ -145,6 +181,38 @@
   color: var(--color-accent);
 }
 
+.statusLabel {
+  margin-left: auto;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.statusSelect {
+  font: inherit;
+  font-size: 0.75rem;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  min-height: 28px;
+}
+
+.statusSelect:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; }
 }
@@ -154,9 +222,12 @@
    overrides our palette. */
 @media (forced-colors: active) {
   .card { border-color: CanvasText; }
-  .card:focus-visible { outline-color: Highlight; }
   .card[data-optimistic="true"],
   .card:hover { border-color: Highlight; }
   .cardDrag { border-color: Highlight; box-shadow: none; }
+  .dragHandle { border-right-color: CanvasText; color: CanvasText; }
+  .dragHandle:focus-visible { outline-color: Highlight; }
   .openButton:focus-visible { outline-color: Highlight; }
+  .statusSelect { border-color: CanvasText; }
+  .statusSelect:focus-visible { outline-color: Highlight; }
 }
