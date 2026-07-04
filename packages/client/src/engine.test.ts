@@ -411,3 +411,102 @@ describe("Engine — per-field CRDT (M7c) for Issue.description", () => {
     expect(aliceText).toContain("Bob says hi.");
   });
 });
+
+describe("Engine — sync retry", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  function gatedTransport(server: FakeServer, gate: { failing: boolean }): Transport {
+    return {
+      push: async (req) => {
+        if (gate.failing) throw new Error("offline");
+        return server.push(req);
+      },
+      pull: async (req) => {
+        if (gate.failing) throw new Error("offline");
+        return server.pull(req);
+      },
+    };
+  }
+
+  it("retries a failed sync with exponential backoff until the server is reachable", async () => {
+    const server = new FakeServer();
+    const gate = { failing: true };
+    const scheduled: Array<{ cb: () => void; ms: number }> = [];
+
+    const eng = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: gatedTransport(server, gate),
+      schedule: (cb, ms) => {
+        scheduled.push({ cb, ms });
+        return scheduled.length;
+      },
+      cancel: () => {},
+      minRetryDelayMs: 100,
+      maxRetryDelayMs: 400,
+    });
+
+    await eng.sync(); // the one-shot initial sync fails…
+    expect(eng.store.getState().online).toBe(false);
+    expect(scheduled).toHaveLength(1); // …but a retry is now pending
+    expect(scheduled[0]!.ms).toBe(100);
+
+    scheduled[0]!.cb(); // retry #1 — still offline
+    await tick();
+    expect(scheduled).toHaveLength(2);
+    expect(scheduled[1]!.ms).toBe(200); // backoff doubled
+
+    gate.failing = false;
+    scheduled[1]!.cb(); // retry #2 — server back
+    await tick();
+    expect(eng.store.getState().online).toBe(true);
+    expect(scheduled).toHaveLength(2); // success schedules nothing further
+  });
+
+  it("a successful sync resets the backoff for the next outage", async () => {
+    const server = new FakeServer();
+    const gate = { failing: true };
+    const scheduled: Array<{ cb: () => void; ms: number }> = [];
+
+    const eng = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: gatedTransport(server, gate),
+      schedule: (cb, ms) => {
+        scheduled.push({ cb, ms });
+        return scheduled.length;
+      },
+      cancel: () => {},
+      minRetryDelayMs: 100,
+      maxRetryDelayMs: 400,
+    });
+
+    await eng.sync(); // fail → delay 100, next would be 200
+    gate.failing = false;
+    scheduled[0]!.cb(); // recover
+    await tick();
+    expect(eng.store.getState().online).toBe(true);
+
+    gate.failing = true;
+    await eng.sync(); // new outage starts from the minimum again
+    expect(scheduled[scheduled.length - 1]!.ms).toBe(100);
+  });
+
+  it("close() cancels a pending retry", async () => {
+    const server = new FakeServer();
+    const gate = { failing: true };
+    const cancelled: unknown[] = [];
+    let handle = 0;
+
+    const eng = await Engine.open({
+      storage: new MemoryClientStorage(),
+      transport: gatedTransport(server, gate),
+      schedule: () => ++handle,
+      cancel: (h) => cancelled.push(h),
+      minRetryDelayMs: 100,
+    });
+
+    await eng.sync();
+    expect(handle).toBe(1); // retry pending
+    eng.close();
+    expect(cancelled).toEqual([1]);
+  });
+});

@@ -49,6 +49,13 @@ export interface EngineOptions {
   now?: () => number;
   /** Test seam — defaults to uuidv7(). */
   newId?: () => string;
+  /** Test seam — defaults to setTimeout. Schedules sync retries. */
+  schedule?: (cb: () => void, ms: number) => unknown;
+  /** Test seam — defaults to clearTimeout. */
+  cancel?: (handle: unknown) => void;
+  /** First retry delay after a failed sync; doubles per failure up to max. */
+  minRetryDelayMs?: number;
+  maxRetryDelayMs?: number;
 }
 
 export class Engine {
@@ -61,12 +68,24 @@ export class Engine {
   private serverBase = new MemoryView();
   /** in-memory copy of the outbox; the storage layer is the durable copy. */
   private outbox: Mutation[] = [];
+  private readonly schedule: (cb: () => void, ms: number) => unknown;
+  private readonly cancelTimer: (handle: unknown) => void;
+  private readonly minRetryDelay: number;
+  private readonly maxRetryDelay: number;
+  private retryDelay: number;
+  private retryHandle: unknown = null;
+  private closed = false;
 
   private constructor(opts: EngineOptions, initial: EngineState) {
     this.storage = opts.storage;
     this.transport = opts.transport;
     this.now = opts.now ?? (() => Date.now());
     this.newId = opts.newId ?? uuidv7;
+    this.schedule = opts.schedule ?? ((cb, ms) => setTimeout(cb, ms));
+    this.cancelTimer = opts.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+    this.minRetryDelay = opts.minRetryDelayMs ?? 1_000;
+    this.maxRetryDelay = opts.maxRetryDelayMs ?? 30_000;
+    this.retryDelay = this.minRetryDelay;
     this.store = createStore<EngineState>(() => initial);
   }
 
@@ -143,6 +162,8 @@ export class Engine {
    * mirror. The durable IndexedDB state is left intact for next session.
    */
   close(): void {
+    this.closed = true;
+    this.clearRetry();
     this.pokeChannel?.close();
     this.pokeChannel = undefined;
   }
@@ -220,10 +241,13 @@ export class Engine {
   /**
    * Push outbox to the server, then pull anything new. Either step may be a
    * no-op (empty outbox; nothing new on server). Sets `syncing` while in flight.
+   * A failed sync schedules a retry with exponential backoff — without it, the
+   * only other trigger is a server poke, which a solo session may never get.
    */
   async sync(): Promise<void> {
     const state = this.store.getState();
     if (state.syncing) return;
+    this.clearRetry();
     this.store.setState({ syncing: true });
     try {
       // PUSH
@@ -241,12 +265,30 @@ export class Engine {
         cookie: this.store.getState().cookie,
       });
       await this.applyPatch(pulled.patch, pulled.cookie, pulled.lastMutationID);
+      this.retryDelay = this.minRetryDelay;
       this.store.setState({ online: true });
     } catch {
       this.store.setState({ online: false });
+      this.scheduleRetry();
     } finally {
       this.store.setState({ syncing: false });
     }
+  }
+
+  private scheduleRetry(): void {
+    if (this.closed || this.retryHandle !== null) return;
+    const delay = this.retryDelay;
+    this.retryDelay = Math.min(this.retryDelay * 2, this.maxRetryDelay);
+    this.retryHandle = this.schedule(() => {
+      this.retryHandle = null;
+      void this.sync();
+    }, delay);
+  }
+
+  private clearRetry(): void {
+    if (this.retryHandle === null) return;
+    this.cancelTimer(this.retryHandle);
+    this.retryHandle = null;
   }
 
   // ---- testing / debugging helpers ----

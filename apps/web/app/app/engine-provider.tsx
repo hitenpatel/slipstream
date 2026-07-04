@@ -42,6 +42,7 @@ export function EngineProvider({
 
     let mounted = true;
     let local: Engine | null = null;
+    let removeListeners: (() => void) | null = null;
 
     (async () => {
       // each user gets their own IDB database, so signing out / switching
@@ -60,13 +61,23 @@ export function EngineProvider({
         return;
       }
       local = eng;
-      // initial sync — pull whatever the server has for this workspace
+      // initial sync — pull whatever the server has for this workspace.
+      // Failed syncs self-retry with backoff; returning focus or regaining
+      // network is a strong "try now" signal, so use those too.
       void eng.sync();
+      const resync = () => void eng.sync();
+      window.addEventListener("online", resync);
+      window.addEventListener("focus", resync);
+      removeListeners = () => {
+        window.removeEventListener("online", resync);
+        window.removeEventListener("focus", resync);
+      };
       setEngine(eng);
     })();
 
     return () => {
       mounted = false;
+      removeListeners?.();
       local?.close();
     };
   }, [me.userId]);
