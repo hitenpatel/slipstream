@@ -13,7 +13,10 @@ export interface Transport {
 export class HttpTransport implements Transport {
   constructor(
     private readonly baseUrl: string,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // The default must stay a free call: assigning the native fetch here and
+    // invoking it as `this.fetchImpl(...)` makes the browser see HttpTransport
+    // as the receiver and throw "Illegal invocation" before any network I/O.
+    private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
   ) {}
 
   async push(req: PushRequest): Promise<PushResponse> {
