@@ -32,8 +32,8 @@ export default async function HomePage() {
                 Start tracking
                 <Arrow />
               </Link>
-              <Link className={styles.ctaGhost} href="/login">
-                Sign in
+              <Link className={styles.ctaGhost} href="/login?demo=1">
+                Try the demo
               </Link>
             </>
           )}
@@ -41,6 +41,12 @@ export default async function HomePage() {
             tracker.hiten.dev<span className={styles.caret} />
           </span>
         </div>
+        {me ? null : (
+          <p className={styles.demoNote}>
+            Demo credentials pre-fill on the sign-in page. Anyone can log in and edit —
+            two tabs will converge live, which is the whole point.
+          </p>
+        )}
       </section>
 
       <section className={styles.explainer} aria-labelledby="explainer-title">

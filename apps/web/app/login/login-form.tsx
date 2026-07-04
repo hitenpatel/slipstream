@@ -4,10 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
-export function LoginForm({ next }: { next?: string }): React.JSX.Element {
+export function LoginForm({
+  next,
+  initialEmail,
+  initialPassword,
+}: {
+  next?: string;
+  initialEmail?: string;
+  initialPassword?: string;
+}): React.JSX.Element {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
+  const [password, setPassword] = useState(initialPassword ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -6,7 +6,7 @@ test("landing page renders and offers signup", async ({ page }) => {
   // Both auth entry points are on the landing; asserting the signup CTA is
   // enough — that's the flow a new visitor takes.
   await expect(page.getByRole("link", { name: /start tracking/i })).toBeVisible();
-  await expect(page.getByRole("link", { name: /sign in/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /try the demo/i })).toBeVisible();
 });
 
 test("sync server healthcheck is up", async ({ request }) => {
