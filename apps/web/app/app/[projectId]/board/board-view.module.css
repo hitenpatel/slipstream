@@ -204,7 +204,7 @@
   border: 0;
   color: inherit;
   text-align: left;
-  cursor: text;
+  cursor: inherit;
   font: inherit;
 }
 

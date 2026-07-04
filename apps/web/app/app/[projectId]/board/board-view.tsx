@@ -319,6 +319,11 @@ function SortableCard({
   // the mobile-friendly fallback for cross-column moves.
   return (
     <li ref={setNodeRef} style={style}>
+      {/* dnd-kit's {...attributes} spread role="button" + tabindex="0" onto
+          the article, so it IS interactive — the jsx-a11y linter can't see
+          that. Keyboard opening lives on the inner openButton; adding an
+          onKeyDown here would collide with dnd-kit's Space/Enter drag. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
       <article
         className={styles.card}
         data-optimistic={optimistic ? "true" : "false"}
@@ -328,6 +333,15 @@ function SortableCard({
         {...listeners}
         aria-roledescription="Draggable issue card"
         aria-label={`${issue.title}, ${STATUS_LABEL[issue.status]}. Press space to drag.`}
+        onClick={(e) => {
+          // Click-anywhere-to-open, except when the click landed on an
+          // interactive descendant (the status <select>, the touch drag
+          // handle, or a link). Drag activations preventDefault the
+          // synthetic click, so a real drag never gets here.
+          const el = e.target as HTMLElement;
+          if (el.closest("button, select, input, textarea, a")) return;
+          onOpen(issue.id);
+        }}
       >
         <span className={styles.statusEdge} aria-hidden="true" />
         <span className={styles.grip} aria-hidden="true">
