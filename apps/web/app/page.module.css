@@ -128,6 +128,16 @@
   animation: caret 1.1s step-end infinite;
 }
 
+.demoNote {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  max-width: 48ch;
+  text-align: center;
+  line-height: 1.55;
+}
+
 /* Explainer row — big statement + CRDT diagram. */
 .explainer {
   max-width: 1080px;

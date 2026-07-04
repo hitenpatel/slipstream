@@ -199,6 +199,11 @@ async function main(): Promise<void> {
   const db = await connect(uri);
   await db.ensureIndexes();
 
+  // Seed a shared demo account on first boot so landing-page visitors can
+  // sign in and explore a populated board without going through signup.
+  const { seedDemoAccount } = await import("./seed.js");
+  await seedDemoAccount(db);
+
   // REDIS_URL switches the broker from in-process to Redis-backed pub/sub
   // so multiple sync instances behind a load balancer share workspace
   // presence + poke fan-out. Absent → single-instance behaviour.

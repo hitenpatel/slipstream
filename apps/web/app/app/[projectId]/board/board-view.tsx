@@ -9,10 +9,13 @@ import {
   MouseSensor,
   TouchSensor,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
   type Announcements,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -63,6 +66,19 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  // closestCenter compares the dragged card's centre to each droppable's
+  // centre — bad for an empty column whose centre is far from the top edge
+  // where the user is dragging. Prefer pointerWithin (the pointer is inside
+  // a droppable), then rectIntersection (the dragged rect overlaps a
+  // droppable), and only fall back to closestCenter when neither hits.
+  const collisionDetection: CollisionDetection = (args) => {
+    const withPointer = pointerWithin(args);
+    if (withPointer.length > 0) return withPointer;
+    const withRect = rectIntersection(args);
+    if (withRect.length > 0) return withRect;
+    return closestCenter(args);
+  };
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIssue = activeId ? issues.find((i) => i.id === activeId) ?? null : null;
@@ -194,7 +210,7 @@ export function BoardView({ projectId }: { projectId: string }): React.JSX.Eleme
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragCancel={() => setActiveId(null)}
