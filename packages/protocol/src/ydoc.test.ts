@@ -56,6 +56,19 @@ describe("Y.Doc helpers", () => {
     applyUpdateB64(receiver, update);
     expect(readBody(receiver)).toBe("from sender");
   });
+
+  it("applyUpdateB64 is a no-op on plain-text (legacy / seeded) input", () => {
+    // Regression: opening a card with a plain-text description (from the
+    // demo seed or a pre-M7c issue) used to blow up the client because
+    // applyUpdateB64 passed the string straight to Y.applyUpdate, which
+    // throws on non-base64 bytes. Now it detects the shape first.
+    const doc = decodeDocOrFromText("Client wall-clock can drift by seconds.");
+    expect(readBody(doc)).toBe("Client wall-clock can drift by seconds.");
+    expect(() =>
+      applyUpdateB64(doc, "Client wall-clock can drift by seconds."),
+    ).not.toThrow();
+    expect(readBody(doc)).toBe("Client wall-clock can drift by seconds.");
+  });
 });
 
 describe("CRDT convergence on concurrent edits", () => {
