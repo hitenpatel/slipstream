@@ -71,8 +71,8 @@
        --font-mono-loaded on <html>; fall back to the same face by name so
        styling survives when Slipstream is embedded outside the Next.js
        app (Storybook, tests). */
-    --font-display: var(--font-display-loaded), "Space Grotesk", system-ui, sans-serif;
-    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-display: var(--font-display-loaded), "Fraunces", "Iowan Old Style", "Georgia", serif;
+    --font-sans: var(--font-body-loaded), "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --font-mono: var(--font-mono-loaded), "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
     /* Ticket IDs, priority badges — a slightly different mono to fingerprint them. */
     --font-id: var(--font-id-loaded), "Space Mono", "JetBrains Mono", ui-monospace, monospace;

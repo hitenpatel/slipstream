@@ -14,11 +14,14 @@ export default async function HomePage() {
           LOCAL-FIRST · NO SAAS SHORTCUTS
         </p>
         <h1 id="pitch-title" className={styles.headline}>
-          Your issues, on your machine first.
+          A tracker I built to prove
+          <em> a point.</em>
         </h1>
         <p className={styles.lede}>
-          A collaborative tracker on a bespoke sync engine. It runs at the speed of local,
-          then reconciles when the network catches up.
+          Every mainstream tracker leans on a hosted sync provider I don&rsquo;t control.
+          So I wrote my own from scratch: optimistic mutations, a server-authoritative log,
+          conflict-free merges, an offline queue that survives reload. Then I put a Linear-shaped
+          tracker on top so you can actually feel it work.
         </p>
         <div className={styles.ctaRow}>
           {me ? (
@@ -28,12 +31,12 @@ export default async function HomePage() {
             </Link>
           ) : (
             <>
-              <Link className={styles.cta} href="/signup">
-                Start tracking
+              <Link className={styles.cta} href="/login?demo=1">
+                Try the demo
                 <Arrow />
               </Link>
-              <Link className={styles.ctaGhost} href="/login?demo=1">
-                Try the demo
+              <Link className={styles.ctaGhost} href="/signup">
+                Or sign up
               </Link>
             </>
           )}
@@ -43,8 +46,8 @@ export default async function HomePage() {
         </div>
         {me ? null : (
           <p className={styles.demoNote}>
-            Demo credentials pre-fill on the sign-in page. Anyone can log in and edit —
-            two tabs will converge live, which is the whole point.
+            The demo workspace is shared on purpose. Open it in two tabs, edit both, watch them
+            converge live. That&rsquo;s the sync engine, doing the thing.
           </p>
         )}
       </section>
@@ -53,12 +56,12 @@ export default async function HomePage() {
         <div className={styles.explainerText}>
           <p className={styles.overline}>HOW THE SYNC ENGINE WORKS</p>
           <h2 id="explainer-title" className={styles.subHeadline}>
-            Write locally. Reconcile in the slipstream.
+            Write locally. Reconcile <em>in the slipstream.</em>
           </h2>
           <p className={styles.explainerBody}>
-            Every edit lands in a local log the instant you make it, no spinner, no round trip.
-            A conflict-free replicated type folds concurrent edits together, so two people
-            working offline still converge on one truth.
+            Every edit lands in a local log the instant you make it. No spinner, no round trip.
+            When the network shows up, a CRDT folds concurrent edits together, so two people
+            working offline still end up on one truth. You don&rsquo;t notice it. That&rsquo;s the compliment.
           </p>
           <ul className={styles.bullets}>
             <li>Edit hits the local write-ahead log immediately.</li>
@@ -71,12 +74,40 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className={styles.byline} aria-labelledby="byline-title">
+        <p className={styles.overline}>WHO BUILT THIS</p>
+        <h2 id="byline-title" className={styles.bylineTitle}>
+          I&rsquo;m Hiten.
+        </h2>
+        <p className={styles.bylineBody}>
+          I&rsquo;m a full-stack engineer. I built Slipstream partly because I wanted to
+          go deep on the mechanics of a sync engine (mutators, optimistic apply,
+          deterministic rebase, transactional counters, CRDTs, a WebSocket poke channel)
+          and partly because I got tired of every demo project reaching for the same three
+          SaaS logos. If you&rsquo;re curious about the engine, everything is open-source, the
+          commit history reads as a build log, and the architecture doc lives in the repo.
+        </p>
+        <p className={styles.bylineLinks}>
+          <a href="https://github.com/hitenpatel/slipstream" rel="noreferrer noopener">
+            source on GitHub
+          </a>
+          <span aria-hidden="true">·</span>
+          <a href="https://github.com/hitenpatel/slipstream/blob/main/docs/ARCHITECTURE.md" rel="noreferrer noopener">
+            architecture doc
+          </a>
+          <span aria-hidden="true">·</span>
+          <a href="https://hiten.dev" rel="noreferrer noopener">
+            hiten.dev
+          </a>
+        </p>
+      </section>
+
       <footer className={styles.footer}>
-        <a href="https://github.com/hitenpatel/slipstream" rel="noreferrer noopener">
-          Repository on GitHub
-        </a>
-        <span aria-hidden="true">·</span>
-        <a href="/api/sync/health">Sync healthcheck</a>
+        <span>
+          Built by Hiten Patel, {new Date().getFullYear()}. Hosted on a Synology NAS behind Traefik,
+          hibernated by Sablier.
+        </span>
+        <a href="/api/sync/health">sync healthcheck</a>
       </footer>
     </main>
   );

@@ -5,9 +5,10 @@
   background-size: 26px 26px;
   color: var(--text);
   display: grid;
-  grid-template-rows: 1fr auto auto;
+  grid-template-rows: 1fr auto auto auto;
   gap: var(--sp-8);
   padding: var(--sp-9) var(--sp-6) var(--sp-6);
+  justify-items: center;
 }
 
 .hero {
@@ -46,19 +47,38 @@
 .headline {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(2rem, 5.5vw, 50px);
+  font-weight: 600;
+  font-size: clamp(2rem, 5.5vw, 56px);
   line-height: 1.02;
-  letter-spacing: -0.03em;
-  max-width: 15ch;
+  letter-spacing: -0.02em;
+  max-width: 18ch;
+  color: var(--text-hi);
+  /* Fraunces reads best with light optical sizing at display size and a
+     touch of extra softness — feels handset rather than defaulted. */
+  font-variation-settings: "opsz" 120, "SOFT" 40;
+}
+
+.headline em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--accent-hi);
+  font-variation-settings: "opsz" 120, "SOFT" 100;
 }
 
 .lede {
   margin: 0;
-  color: var(--muted);
+  color: var(--text-2);
   font-size: 18px;
   line-height: 1.6;
-  max-width: 50ch;
+  max-width: 56ch;
+  font-weight: 400;
+}
+
+.lede em {
+  color: var(--text-hi);
+  font-style: italic;
+  font-family: var(--font-display);
+  font-weight: 500;
 }
 
 .ctaRow {
@@ -171,10 +191,19 @@
 .subHeadline {
   margin: 0 0 var(--sp-4);
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 500;
   font-size: var(--fs-h1);
-  line-height: 1.12;
+  line-height: 1.15;
   letter-spacing: -0.02em;
+  color: var(--text-hi);
+  font-variation-settings: "opsz" 60, "SOFT" 40;
+}
+
+.subHeadline em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--accent-hi);
+  font-variation-settings: "opsz" 60, "SOFT" 100;
 }
 
 .explainerBody {
@@ -223,16 +252,72 @@
   font-family: var(--font-mono);
 }
 
+/* Byline — "who built this". Sits between the explainer and the footer,
+   deliberately narrower and left-aligned so it reads like a written
+   paragraph rather than a marketing card. */
+.byline {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--sp-7) var(--sp-3);
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.bylineTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-h2);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--text-hi);
+  font-style: italic;
+  font-variation-settings: "opsz" 40, "SOFT" 100;
+}
+
+.bylineBody {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.bylineLinks {
+  margin: var(--sp-3) 0 0;
+  display: flex;
+  gap: var(--sp-3);
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--muted-2);
+}
+
+.bylineLinks a {
+  color: var(--accent-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.bylineLinks a:hover {
+  color: var(--accent-hi);
+}
+
 .footer {
   margin: 0 auto;
   padding-top: var(--sp-5);
-  color: var(--muted);
+  border-top: 1px solid var(--border);
+  color: var(--muted-2);
   font-family: var(--font-mono);
-  font-size: var(--fs-small);
+  font-size: var(--fs-micro);
   display: flex;
-  gap: var(--sp-3);
-  justify-content: center;
+  gap: var(--sp-4);
+  justify-content: space-between;
+  align-items: baseline;
   flex-wrap: wrap;
+  max-width: 1080px;
+  width: 100%;
 }
 
 .footer a {
