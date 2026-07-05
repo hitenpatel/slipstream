@@ -1,14 +1,27 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Space_Grotesk, Space_Mono, JetBrains_Mono } from "next/font/google";
+import { Fraunces, Inter, Space_Mono, JetBrains_Mono } from "next/font/google";
 import "@slipstream/ui/tokens.css";
 import "./globals.css";
 
-// Space Grotesk carries the display voice — mechanical edge for headings.
-const spaceGrotesk = Space_Grotesk({
+// Fraunces carries the display voice — a variable serif with real warmth,
+// swapped in from the flatter Space Grotesk so the headings feel written
+// rather than generated. Axes: weight + optical sizing.
+const fraunces = Fraunces({
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: "variable",
+  style: ["normal", "italic"],
   variable: "--font-display-loaded",
+  display: "swap",
+  axes: ["opsz", "SOFT"],
+});
+
+// Inter runs body copy. Chosen for readability at the small-body scale
+// after the system stack read as too shape-agnostic against the serif.
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-body-loaded",
   display: "swap",
 });
 
@@ -38,7 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${spaceMono.variable} ${jetbrainsMono.variable}`}
+      className={`${fraunces.variable} ${inter.variable} ${spaceMono.variable} ${jetbrainsMono.variable}`}
     >
       <body>{children}</body>
     </html>
