@@ -72,10 +72,20 @@ export function decodeDocOrFromText(value: string): Y.Doc {
 /**
  * Apply a base64-encoded Yjs update to a doc. Returns the doc for chaining.
  * Idempotent on duplicate updates (Yjs dedupes by op id).
+ *
+ * Defensive against pre-M7c or seed data: if the value doesn't look like a
+ * base64 Y.Doc state (typical prose, plain text) the call is a no-op. The
+ * legacy-text seeding path lives in `decodeDocOrFromText`; this helper's job
+ * is just to fold in a real update without ever throwing at a caller.
  */
 export function applyUpdateB64(doc: Y.Doc, b64: string): Y.Doc {
   if (!b64) return doc;
-  Y.applyUpdate(doc, B64.decode(b64));
+  if (!looksLikeBase64State(b64)) return doc;
+  try {
+    Y.applyUpdate(doc, B64.decode(b64));
+  } catch {
+    // corrupt update or transient decode failure — leave the doc as-is
+  }
   return doc;
 }
 
