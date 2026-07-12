@@ -42,9 +42,25 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://tracker.hiten.dev"),
   title: "Slipstream — local-first sync engine, demonstrated as a tracker",
   description:
     "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue. The tracker is the surface; the engine is the story.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "https://tracker.hiten.dev",
+    siteName: "Slipstream",
+    title: "Slipstream — local-first sync engine, demonstrated as a tracker",
+    description:
+      "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue. The tracker is the surface; the engine is the story.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Slipstream — local-first sync engine, demonstrated as a tracker",
+    description:
+      "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue.",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

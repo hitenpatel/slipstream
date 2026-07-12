@@ -4,10 +4,33 @@ import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "Slipstream",
+  url: "https://tracker.hiten.dev",
+  description:
+    "A collaborative issue tracker built on a hand-written local-first sync engine: optimistic mutations, server-authoritative reconciliation, conflict-free merges, and an offline queue that survives reload.",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Web",
+  browserRequirements: "Requires JavaScript",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "GBP" },
+  author: {
+    "@type": "Person",
+    name: "Hiten Patel",
+    url: "https://hiten.dev",
+    jobTitle: "Senior Frontend Engineer",
+  },
+};
+
 export default async function HomePage() {
   const me = await getMe();
   return (
     <main className={styles.main}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <section className={styles.hero} aria-labelledby="pitch-title">
         <p className={styles.badge}>
           <span className={styles.badgeDot} aria-hidden="true" />

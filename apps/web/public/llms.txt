@@ -1,0 +1,26 @@
+# Slipstream
+
+> A collaborative issue tracker built on a hand-written local-first sync engine — optimistic mutations, a server-authoritative log, conflict-free merges, and an offline queue that survives reload. The tracker is the surface; the engine is the story. Built by Hiten Patel (https://hiten.dev).
+
+No hosted sync provider (no Replicache, no Liveblocks). The engine is built from scratch:
+- Optimistic mutations applied instantly on the client, rebased against a server-authoritative total order (MongoDB transaction + global version counter)
+- Deterministic mutator replay shared between client and server (one codebase, two runtimes)
+- Offline queue in IndexedDB — mutations survive reload and sync on reconnect
+- Yjs CRDT for concurrent issue-description editing; discrete fields stay server-ordered
+- Real-time presence and live convergence over WebSocket (in-process broker, Redis-backed for scale-out)
+
+## Stack
+
+- React 19 + Next.js App Router (Server Components for landing/auth, single client island for the app)
+- Hono sync server on Node, MongoDB replica set, Zustand v5 store, @dnd-kit board, virtualised list
+- Accessibility as a design property: keyboard-operable drag-and-drop (Space/Arrow/Esc), WAI-ARIA combobox command palette, aria-live sync announcements, axe-core WCAG 2.1 A/AA checks in CI
+
+## Try it
+
+- Live demo: https://tracker.hiten.dev (one-click demo account on the landing page — open two browsers to watch realtime convergence)
+- Author: Hiten Patel — senior frontend engineer, https://hiten.dev
+- Contact and full CV: https://hiten.dev/llms.txt and https://ask.hiten.dev
+
+## Status
+
+In active development. Core tracker (issue CRUD, board, list, comments, realtime, offline) is live; see the landing page for current milestones.
