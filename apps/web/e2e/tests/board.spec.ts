@@ -22,7 +22,7 @@ test("signup → project → issue → move via status select", async ({ page })
   await page.getByRole("button", { name: /\+ new/i }).click();
   await page.getByPlaceholder("Project name").fill("E2E Project");
   await page.getByPlaceholder("KEY").fill("E2E");
-  await page.getByRole("button", { name: /^create$/i }).click();
+  await page.getByRole("navigation", { name: "Projects" }).getByRole("button", { name: /^create$/i }).click();
 
   // AppHome auto-redirects to the first project once it appears in the view.
   await expect(page).toHaveURL(/\/app\/[0-9a-f-]+$/, { timeout: 15_000 });

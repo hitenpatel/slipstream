@@ -1,0 +1,160 @@
+.panel {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-dim);
+}
+
+.suggestBtn {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.suggestBtn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.suggestBtn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.rationale {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  border-left: 2px solid var(--color-border);
+  padding-left: var(--space-3);
+}
+
+.error {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #bf6e6e;
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.suggestion {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.acceptBtn {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg));
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.acceptBtn:disabled {
+  opacity: 0.65;
+  cursor: default;
+  border-color: var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.acceptBtn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.duplicates {
+  display: grid;
+  gap: 4px;
+}
+
+.dupHeading {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+.dupList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dupLink {
+  font: inherit;
+  font-size: 0.875rem;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dupLink:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (forced-colors: active) {
+  .suggestBtn,
+  .acceptBtn {
+    border-color: CanvasText;
+  }
+  .dupLink {
+    color: LinkText;
+  }
+}

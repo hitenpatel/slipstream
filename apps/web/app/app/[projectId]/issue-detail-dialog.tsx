@@ -20,6 +20,7 @@ import { useEngine } from "../engine-provider";
 import { PresenceAvatars } from "../presence-avatars";
 import { PRIORITY_LABEL, STATUS_LABEL } from "./filters";
 import { LabelChips } from "./label-chips";
+import { TriagePanel } from "./triage-panel";
 import { useProjectData } from "./hooks";
 import styles from "./issue-detail-dialog.module.css";
 
@@ -82,6 +83,7 @@ export function IssueDetailDialog({ projectId }: { projectId: string }): React.J
       >
         <DetailBody
           issue={issue}
+          issues={issues}
           labels={labels}
           comments={commentsByIssue.get(issue.id) ?? []}
           workspaceId={me.workspaceId}
@@ -99,6 +101,7 @@ export function IssueDetailDialog({ projectId }: { projectId: string }): React.J
 
 function DetailBody({
   issue,
+  issues,
   labels,
   comments,
   workspaceId,
@@ -108,6 +111,7 @@ function DetailBody({
   onMutate,
 }: {
   issue: Issue;
+  issues: Issue[];
   labels: import("@slipstream/protocol").Label[];
   comments: import("@slipstream/protocol").Comment[];
   workspaceId: string;
@@ -287,6 +291,8 @@ function DetailBody({
           </button>
         </form>
       </section>
+
+      <TriagePanel issue={issue} labels={labels} issues={issues} onMutate={onMutate} />
 
       <section className={styles.section} aria-labelledby="desc-h">
         <h3 id="desc-h" className={styles.sectionTitle}>

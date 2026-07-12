@@ -1,12 +1,25 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { WebSocketServer } from "ws";
 import {
   ClientMessageSchema,
   PROTOCOL_VERSION,
   PullRequestSchema,
   PushRequestSchema,
+  decodeDocOrFromText,
+  readBody,
+  type TriageEvent,
 } from "@slipstream/protocol";
+import {
+  buildTriagePrompt,
+  groqProvider,
+  parseTriageOutput,
+  stubProvider,
+  triageRateLimited,
+  type TriageContext,
+  type TriageProvider,
+} from "./triage.js";
 import { SESSION_COOKIE, createAuthRoutes, readSession } from "./auth.js";
 import { getCookie } from "hono/cookie";
 import { connect, type SlipstreamDb } from "./db.js";
@@ -77,9 +90,93 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(res);
   });
 
+  /**
+   * AI triage: streams the model's rationale as SSE `delta` events, then a
+   * single parsed `suggestion` (or `error`), then `done`. Applying an
+   * accepted suggestion is the client's job, through the normal push path —
+   * this route never mutates entities.
+   */
+  app.post("/api/ai/triage", async (c) => {
+    const session = await readSession(db, getCookie(c, SESSION_COOKIE));
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+
+    const body = (await c.req.json().catch(() => ({}))) as { issueId?: unknown };
+    const issueId = typeof body.issueId === "string" ? body.issueId : "";
+    if (!issueId) return c.json({ error: "bad_request" }, 400);
+
+    const provider = resolveTriageProvider();
+    if (provider === "disabled") return c.json({ error: "ai_unavailable" }, 503);
+
+    const issue = await db.entities.findOne({ _id: issueId, kind: "issue" });
+    if (!issue || issue.kind !== "issue" || issue.deleted || issue.workspaceId !== session.workspaceId) {
+      return c.json({ error: "not_found" }, 404);
+    }
+
+    if (triageRateLimited(session.workspaceId)) {
+      return c.json({ error: "rate_limited" }, 429);
+    }
+
+    const [labelDocs, siblingDocs] = await Promise.all([
+      db.entities
+        .find({ kind: "label", projectId: issue.projectId, deleted: false })
+        .toArray(),
+      db.entities
+        .find({ kind: "issue", projectId: issue.projectId, deleted: false, _id: { $ne: issueId } })
+        .sort({ updatedAt: -1 })
+        .limit(60)
+        .toArray(),
+    ]);
+    const labels = labelDocs.flatMap((l) => (l.kind === "label" ? [{ id: l.id, name: l.name }] : []));
+    const siblings = siblingDocs.flatMap((s) =>
+      s.kind === "issue" ? [{ id: s.id, title: s.title, status: s.status }] : [],
+    );
+
+    const ctx: TriageContext = {
+      issue: {
+        title: issue.title,
+        description: readBody(decodeDocOrFromText(issue.description)),
+        status: issue.status,
+        priority: issue.priority,
+        labelNames: labels.filter((l) => issue.labelIds.includes(l.id)).map((l) => l.name),
+      },
+      labels,
+      siblings,
+    };
+
+    const generate: TriageProvider =
+      provider === "stub"
+        ? stubProvider(ctx)
+        : groqProvider(process.env.GROQ_API_KEY ?? "", process.env.TRIAGE_MODEL ?? "openai/gpt-oss-120b");
+
+    return streamSSE(c, async (stream) => {
+      const send = (event: TriageEvent) => stream.writeSSE({ data: JSON.stringify(event) });
+      let full = "";
+      try {
+        const signal = AbortSignal.timeout(45_000);
+        for await (const delta of generate(buildTriagePrompt(ctx), signal)) {
+          full += delta;
+          await send({ type: "delta", text: delta });
+        }
+        const suggestion = parseTriageOutput(full, ctx);
+        await send({ type: "suggestion", suggestion });
+      } catch (err) {
+        await send({ type: "error", error: (err as Error).message });
+      } finally {
+        await send({ type: "done" });
+      }
+    });
+  });
+
   app.route("/", createAuthRoutes(db));
 
   return app;
+}
+
+function resolveTriageProvider(): "groq" | "stub" | "disabled" {
+  const mode = process.env.TRIAGE_PROVIDER;
+  if (mode === "stub") return "stub";
+  if (mode === "disabled") return "disabled";
+  return process.env.GROQ_API_KEY ? "groq" : "disabled";
 }
 
 /** Anything that emits `upgrade` events the way Node's http.Server does. */

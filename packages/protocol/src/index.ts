@@ -6,5 +6,6 @@ export * from "./ids.js";
 export * from "./memory-tx.js";
 export * from "./mutators.js";
 export * from "./protocol.js";
+export * from "./triage.js";
 export * from "./tx.js";
 export * from "./ydoc.js";

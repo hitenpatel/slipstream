@@ -8,7 +8,10 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const SYNC_DIR = path.join(REPO_ROOT, "apps", "sync");
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");
 
-const SYNC_PORT = 8788;
+// Must be 8787: next.config rewrite destinations (push/pull) are baked into
+// the build manifest with the default SYNC_ORIGIN, so the e2e sync server
+// has to listen where the built web app expects it.
+const SYNC_PORT = 8787;
 const WEB_PORT = 3100;
 const SESSION_SECRET = "e2e-secret-thirty-two-chars-min-aaaaaaaa";
 
@@ -49,6 +52,8 @@ export default async function globalSetup(): Promise<void> {
       MONGODB_URI: mongoUri,
       SESSION_SECRET,
       PORT: String(SYNC_PORT),
+      // Deterministic canned triage output — E2E never calls a real LLM.
+      TRIAGE_PROVIDER: "stub",
     },
     stdio: ["ignore", "inherit", "inherit"],
   });

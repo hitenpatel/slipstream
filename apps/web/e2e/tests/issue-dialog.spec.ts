@@ -17,7 +17,7 @@ test("clicking the description field does not close the dialog", async ({ page }
   await page.getByRole("button", { name: /\+ new/i }).click();
   await page.getByPlaceholder("Project name").fill("Dialog project");
   await page.getByPlaceholder("KEY").fill("DLG");
-  await page.getByRole("button", { name: /^create$/i }).click();
+  await page.getByRole("navigation", { name: "Projects" }).getByRole("button", { name: /^create$/i }).click();
   await expect(page).toHaveURL(/\/app\/[0-9a-f-]+$/, { timeout: 15_000 });
 
   const title = `Dialog issue ${suffix}`;

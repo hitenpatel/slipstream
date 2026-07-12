@@ -12,7 +12,7 @@ test("landing page renders and offers signup", async ({ page }) => {
 test("sync server healthcheck is up", async ({ request }) => {
   // Hits the sync process directly on its port (Next doesn't rewrite
   // /api/sync/*, only /api/push and /api/pull).
-  const res = await request.get("http://127.0.0.1:8788/api/sync/health");
+  const res = await request.get("http://127.0.0.1:8787/api/sync/health");
   expect(res.status()).toBe(200);
   const body = (await res.json()) as { ok: boolean; service: string };
   expect(body.ok).toBe(true);
