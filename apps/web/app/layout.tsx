@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Fraunces, Inter, Space_Mono, JetBrains_Mono } from "next/font/google";
 import "@slipstream/ui/tokens.css";
@@ -61,6 +61,9 @@ export const metadata: Metadata = {
     description:
       "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue.",
   },
+};
+
+export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: dark)", color: "#0a0c0f" },
     { media: "(prefers-color-scheme: light)", color: "#f6f8fa" },
