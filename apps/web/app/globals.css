@@ -52,3 +52,33 @@
     }
   }
 }
+
+@layer utilities {
+  /* WCAG 2.4.1 skip link — positioned off-screen until focused */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    z-index: 9999;
+    background: var(--bg);
+    color: var(--text-hi);
+    font-family: var(--font-sans);
+    font-size: var(--fs-body);
+    padding: 0.5rem 1rem;
+    border-radius: var(--r-2);
+    border: 2px solid var(--accent);
+    text-decoration: none;
+  }
+  .skip-link:focus-visible {
+    position: fixed;
+    left: 1rem;
+    top: 1rem;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    box-shadow: var(--ring);
+  }
+}

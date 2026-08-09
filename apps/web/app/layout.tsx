@@ -61,6 +61,10 @@ export const metadata: Metadata = {
     description:
       "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue.",
   },
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0c0f" },
+    { media: "(prefers-color-scheme: light)", color: "#f6f8fa" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -69,7 +73,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       lang="en"
       className={`${fraunces.variable} ${inter.variable} ${spaceMono.variable} ${jetbrainsMono.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

@@ -26,7 +26,7 @@ const jsonLd = {
 export default async function HomePage() {
   const me = await getMe();
   return (
-    <main className={styles.main}>
+    <main id="main" className={styles.main}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -127,10 +127,18 @@ export default async function HomePage() {
 
       <footer className={styles.footer}>
         <span>
-          Built by Hiten Patel, {new Date().getFullYear()}. Hosted on a Synology NAS behind Traefik,
+          Built by{" "}
+          <a href="https://hiten.dev" rel="noreferrer noopener">
+            Hiten Patel
+          </a>
+          , {new Date().getFullYear()}. Hosted on a Synology NAS behind Traefik,
           hibernated by Sablier.
         </span>
-        <a href="/api/sync/health">sync healthcheck</a>
+        <span>
+          <a href="mailto:hello@hiten.dev">hello@hiten.dev</a>
+          {" · "}
+          <a href="/api/sync/health">sync healthcheck</a>
+        </span>
       </footer>
     </main>
   );
