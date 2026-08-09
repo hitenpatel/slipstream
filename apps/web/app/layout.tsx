@@ -54,12 +54,14 @@ export const metadata: Metadata = {
     title: "Slipstream — local-first sync engine, demonstrated as a tracker",
     description:
       "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue. The tracker is the surface; the engine is the story.",
+    images: [{ url: "/og.png", width: 1200, height: 630 }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Slipstream — local-first sync engine, demonstrated as a tracker",
     description:
       "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue.",
+    images: ["/og.png"],
   },
 };
 
