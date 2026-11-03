@@ -17,7 +17,7 @@ No hosted sync provider (no Replicache, no Liveblocks). The engine is built from
 
 ## Try it
 
-- Live demo: https://tracker.hiten.dev (one-click demo account on the landing page — open two browsers to watch realtime convergence)
+- Live demo: https://tracker.hiten.dev/ (one-click demo account on the landing page — open two browsers to watch realtime convergence)
 - Author: Hiten Patel — senior frontend engineer, https://hiten.dev
 - Contact and full CV: https://hiten.dev/llms.txt and https://ask.hiten.dev
 

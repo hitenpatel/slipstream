@@ -4,6 +4,11 @@ import { getMe } from "@/lib/session";
 import { SignupForm } from "./signup-form";
 import styles from "../login/page.module.css";
 
+
+export const metadata = {
+  robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
+};
+
 export const dynamic = "force-dynamic";
 
 async function lookupInvite(token: string): Promise<{ workspaceName: string; inviterEmail: string } | null> {

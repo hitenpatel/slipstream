@@ -3,6 +3,11 @@ import { SYNC_ORIGIN } from "@/lib/config";
 import { getMe } from "@/lib/session";
 import styles from "../../login/page.module.css";
 
+
+export const metadata = {
+  robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
+};
+
 export const dynamic = "force-dynamic";
 
 type InviteInfo = {

@@ -41,26 +41,30 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const HOME_URL = "https://tracker.hiten.dev/";
+const TITLE = "Slipstream: a hand-built local-first sync engine and tracker";
+const DESCRIPTION =
+  "A hand-built local-first sync engine, demonstrated as an issue tracker: optimistic mutations, server-authoritative reconciliation and an offline queue.";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://tracker.hiten.dev"),
-  title: "Slipstream — local-first sync engine, demonstrated as a tracker",
-  description:
-    "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue. The tracker is the surface; the engine is the story.",
-  alternates: { canonical: "/" },
+  title: TITLE,
+  description: DESCRIPTION,
+  // The canonical link is rendered by app/page.tsx: Next strips the root
+  // trailing slash from alternates.canonical, and the canonical is
+  // https://tracker.hiten.dev/ exactly.
   openGraph: {
     type: "website",
-    url: "https://tracker.hiten.dev",
+    url: HOME_URL,
     siteName: "Slipstream",
-    title: "Slipstream — local-first sync engine, demonstrated as a tracker",
-    description:
-      "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue. The tracker is the surface; the engine is the story.",
+    title: TITLE,
+    description: DESCRIPTION,
     images: [{ url: "/og.png", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Slipstream — local-first sync engine, demonstrated as a tracker",
-    description:
-      "A hand-built local-first sync engine: optimistic mutations, server-authoritative reconciliation, offline queue.",
+    title: TITLE,
+    description: DESCRIPTION,
     images: ["/og.png"],
   },
 };
