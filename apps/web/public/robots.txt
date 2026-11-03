@@ -1,2 +1,15 @@
+# Slipstream — public portfolio demo lives at /
+# Application, auth and API routes are intentionally excluded from indexing.
+
 User-agent: *
 Allow: /
+Disallow: /app
+Disallow: /app/
+Disallow: /login
+Disallow: /signup
+Disallow: /join
+Disallow: /join/
+Disallow: /api
+Disallow: /api/
+
+Sitemap: https://tracker.hiten.dev/sitemap.xml

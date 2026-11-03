@@ -3,6 +3,11 @@ import { getMe } from "@/lib/session";
 import { LoginForm } from "./login-form";
 import styles from "./page.module.css";
 
+
+export const metadata = {
+  robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
+};
+
 export const dynamic = "force-dynamic";
 
 // Kept in sync with apps/sync/src/seed.ts. Publicly known; the demo
